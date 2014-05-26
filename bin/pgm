@@ -213,6 +213,17 @@ host_psql() {
     fi
 }
 
+## To be piped in it
+sql() {
+    host="$1"
+    shift
+    {
+        echo "\set ON_ERROR_STOP on"
+        cat -
+    } | host_psql "$host" -qAt "$@"
+}
+export -f sql
+
 db_exists() {
     host="$1"
     db="$2"
@@ -221,7 +232,7 @@ db_exists() {
         echo " SELECT COUNT(*)
             FROM pg_database
             WHERE datistemplate = false AND datname = '$db' " |
-        host_psql "$host" -qAt
+        sql "$host"
     )
     test "$result" == 1
 }
@@ -229,8 +240,8 @@ db_exists() {
 host_pg_drop() {
     host="$1"
     db="$2"
-    echo "DROP DATABASE \"$2\";" | \
-        host_psql "$host" -qAt >/dev/null
+    echo "DROP DATABASE $2;" |
+    sql "$host" >/dev/null
 }
 
 host_pg_drop_session() {
@@ -241,7 +252,7 @@ host_pg_drop_session() {
     echo "SELECT pg_terminate_backend(procpid)
           FROM pg_stat_activity
           WHERE procpid <> pg_backend_pid() AND datname = '$db';" | \
-        host_psql "$host" -qAt >/dev/null
+        sql "$host" >/dev/null
 }
 
 BACKUPS=/var/backups/pg
@@ -304,7 +315,7 @@ host_get_owner() {
         FROM pg_database pd
         JOIN pg_authid ON pd.datdba = pg_authid.oid
         WHERE datistemplate = false AND datname = '$db'" |
-        host_psql "$host" "$db" -qAt
+        sql "$host" "$db"
 }
 
 host_pg_chown() {
@@ -315,23 +326,20 @@ host_pg_chown() {
     user="$2"
     db="$3"
 
-
     [ "$VERBOSE" ] && wrap_opts="" || wrap_opts="-q"
     Wrap $wrap_opts -d "Setting ownership on views" <<EOF || exit 1
 
-        echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO $user;'
-          FROM pg_views
-          WHERE schemaname = 'public'" |
-        host_psql "$host" "$db" -qAt |
-        host_psql "$host" "$db"
+       echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO $user;'
+         FROM pg_views
+         WHERE schemaname = 'public'" |
+       sql "$host" "$db" | sql "$host" "$db"
 EOF
 
     Wrap $wrap_opts -d "Setting ownership on tables" <<EOF || exit 1
        echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO $user;'
           FROM pg_tables
           WHERE schemaname = 'public'" |
-        host_psql "$host" "$db" -qAt |
-        host_psql "$host" "$db"
+       sql "$host" "$db" | sql "$host" "$db"
 EOF
 
     Wrap $wrap_opts -d "Restating user permissions on tables" <<EOF || exit 1
@@ -339,21 +347,19 @@ EOF
                  tablename || ' TO $user;'
           FROM pg_tables
           WHERE schemaname = 'public'" |
-        host_psql "$host" "$db" -qAt |
-        host_psql "$host" "$db"
+       sql "$host" "$db" | sql "$host" "$db"
 EOF
 
     Wrap $wrap_opts -d "Setting ownership on sequences" <<EOF || exit 1
        echo "SELECT 'ALTER TABLE ' || sequence_name || ' OWNER TO $user;'
           FROM information_schema.sequences
           WHERE sequence_schema = 'public'" |
-        host_psql "$host" "$db" -qAt |
-        host_psql "$host" "$db"
+       sql "$host" "$db" | sql "$host" "$db"
 EOF
 
-    Wrap $wrap_opts -d "Setting ownership on database" <<EOF || exit 1
+    Wrap $wrap_opts -d "Setting ownership on database $db" <<EOF || exit 1
        echo "ALTER DATABASE $db OWNER TO $user;" |
-       host_psql "$host" "$db"
+       sql "$host" "$db"
 EOF
 
 }
@@ -363,7 +369,7 @@ user_exists() {
     user="$2"
 
     [ "$(echo "SELECT 1 FROM pg_roles WHERE rolname='$user'" |
-         host_psql "$host" -qAt)" ]
+         sql "$host")" ]
 }
 
 host_create_user() {
@@ -372,10 +378,7 @@ host_create_user() {
 
     [ "$VERBOSE" ] && wrap_opts="" || wrap_opts="-q"
     Wrap $wrap_opts -d "Creating user $user" <<EOF || exit 1
-
-    echo "CREATE USER $user" |
-    host_psql "$host" >/dev/null || die "Can't create user."
-
+    echo "CREATE USER $user" | sql "$host"
 EOF
 
 }
@@ -447,8 +450,7 @@ depends() {
 
 host_version() {
     host="$1"
-    echo "SELECT version()" |
-        host_psql "$host" -qAt
+    echo "SELECT version()" | sql "$host"
 }
 
 check_host() {
@@ -484,11 +486,11 @@ depends '"$dependencies" || exit 1
         depends $dependencies
     fi
 
-    if ! echo "SELECT 1;" | host_psql "$host" -qAt >/dev/null 2>&1; then
+    if ! echo "SELECT 1;" | sql "$host" >/dev/null 2>&1; then
         die "Insufficient access: psql command non-working."
     fi
 
-    if ! echo "SHOW is_superuser;" | host_psql "$host" -qAt >/dev/null 2>&1; then
+    if ! echo "SHOW is_superuser;" | sql "$host" >/dev/null 2>&1; then
         die "Insufficient postgres permission on "\
             $([ "$host" ] && echo "host '$host'." || echo "localhost.")
     fi
@@ -502,7 +504,7 @@ get_active_connection_nb() {
                 FROM pg_stat_activity
                 WHERE datname = '$src'
                   AND procpid <> pg_backend_pid()" |
-        host_psql "$host" -qAt
+    sql "$host"
 }
 
 ## These are used in subprocess
