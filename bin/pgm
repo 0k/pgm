@@ -1,0 +1,627 @@
+#!/bin/bash
+
+## Protect against translations
+export LC_ALL=C
+
+##
+## kal-shlib-common functions
+##
+
+print_exit() {
+    echo $@
+    exit 1
+}
+
+get_path() {
+    local type
+
+    type="$(type -t "$1")"
+    case $type in
+	("file")
+	    type -p "$1"
+	    return 0
+	    ;;
+	("function" | "builtin" )
+	    echo "$1"
+	    return 0
+	    ;;
+    esac
+    return 1
+}
+
+depends() {
+
+    ## Very important not to collide with variables that are created
+    ## with depends.
+    local __i __tr __path
+
+    __tr=$(get_path "tr")
+    test "$__tr" ||
+	print_error "dependency check: couldn't find 'tr' command."
+
+    for __i in $@ ; do
+
+      if ! __path=$(get_path $__i); then
+	  __new_name=$(echo $__i | "$__tr" '_' '-')
+	  if [ "$__new_name" != "$__i" ]; then
+	     depends "$__new_name"
+	  else
+	     print_error "dependency check: couldn't find '$__i' command."
+	  fi
+      else
+	  if ! test -z "$__path" ; then
+	      export "$(echo $__i | "$__tr" '-' '_')"=$__path
+	  fi
+      fi
+
+    done
+}
+
+print_syntax_warning() {
+    [ "$*" ] || print_syntax_error "$FUNCNAME: no arguments."
+    [ "$exname" ] || print_syntax_error "$FUNCNAME: 'exname' var is null or not defined."
+    echo "$exname: ${WARNING}script warning:${NORMAL} $@" >&2
+}
+
+print_error() {
+    [ "$*" ] || print_syntax_warning "$FUNCNAME: no arguments."
+    [ "$exname" ] || print_exit "$FUNCNAME: 'exname' var is null or not defined." >&2
+    print_exit "$exname: ${ERROR}error:${NORMAL} $@" >&2
+}
+
+Wrap() {
+
+    local quiet desc errlvl args
+
+    quiet=false
+    desc=""
+    args=()
+    while [ "$#" != 0 ]; do
+        case "$1" in
+            "-q") quiet="";;
+            "-d") desc=$2; shift;;
+            *) args=("${args[@]}" "$1");;
+        esac
+        shift
+    done
+
+    if test -z "${args[*]}"; then
+        code=$(cat -)
+        [ "$quiet" == false -a -z "$desc" ] &&
+        print_error "no description for warp command"
+    else
+        code="${args[@]}"
+        test -z "$desc" && desc="$code"
+    fi
+    [ "$quiet" ] && echo "$desc"
+
+    output=$(echo "$code" | bash 2>&1 )
+    errlvl="$?"
+    if [ "$errlvl" == "0" ]; then
+        return 0
+    fi
+
+    echo "${RED}Error in wrapped command:${NORMAL}"
+    echo " ${DARKYELLOW}pwd:${NORMAL} $PWD"
+    echo " ${DARKYELLOW}code:${NORMAL}"
+    echo "$code" | sed -url1 "s/^/  ${GRAY}|${NORMAL}/g"
+    echo " ${DARKYELLOW}output (${YELLOW}$errlvl${NORMAL})${DARKYELLOW}:${NORMAL}"
+    echo "$output" | sed -url1 "s/^/  ${GRAY}|${NORMAL}/g"
+
+    return $errlvl
+}
+
+
+## COLORS:
+
+ansi_color() {
+    if [ "$1" != "no" ]; then
+
+        NORMAL=$(echo -en "\e[0m")
+        RED=$(echo -en "\e[1;31m")
+        GREEN=$(echo -en "\e[1;32m")
+        DARKGREEN=$(echo -en "\e[0;32m")
+        YELLOW=$(echo -en "\e[1;33m")
+        DARKYELLOW=$(echo -en "\e[0;33m")
+        BLUE=$(echo -en "\e[1;34m")
+        GRAY=$(echo -en "\e[1;30m")
+        WHITE=$(echo -en "\e[1;37m")
+        CYAN=$(echo -en "\e[1;36m")
+        PINK=$(echo -en "\e[1;35m")
+
+        SUCCESS=$GREEN
+        WARNING=$YELLOW
+        FAILURE=$RED
+        NOOP=$BLUE
+        ON=$SUCCESS
+        OFF=$FAILURE
+        ERROR=$FAILURE
+
+        ansi_color="yes"
+
+    else
+
+        NORMAL=
+        RED=
+        GREEN=
+        DARKGREEN=
+        YELLOW=
+        DARKYELLOW=
+        BLUE=
+        GRAY=
+        WHITE=
+
+        SUCCESS=
+        WARNING=
+        FAILURE=
+        NOOP=
+        ON=
+        OFF=
+        ERROR=
+
+        ansi_color="no"
+
+    fi
+}
+
+warn() { echo "${YELLOW}Warning:$NORMAL" "$@" >&2 ; }
+info() { echo "${BLUE}II$NORMAL" "$@" >&2 ; }
+die() { echo "${RED}Error:$NORMAL" "$@" >&2 ; exit 1; }
+
+print_usage() {
+    local act
+
+    (
+        echo "usage:"
+        for act in $actions; do
+            export action_$act_usage >/dev/null 2>&1
+            echo "  $exname $act $(eval echo \$action_${act}_usage)"
+        done
+    ) >&2
+
+}
+
+##
+## Common
+##
+
+[ -f "~/.pg_copy_db.rc" ] && . ~/.pg_copy_db.rc
+
+pg_local_opts=${pg_local_opts:-""}
+prefix_pg_local_command=${prefix_pg_local_command:-"sudo -u postgres"}
+
+get_path() { (
+    IFS=:
+    for d in $PATH; do
+        filename="$d/$1"
+        if test -x "$filename"; then echo "$d/$1"; return 0; fi
+    done
+    return 1
+) }
+
+
+host_psql() {
+    host="$1"
+    shift
+    if [ -z "$host" ]; then
+        $prefix_pg_local_command psql $pg_local_opts "$@"
+    else
+        ssh-once "$host" \
+            "cd /; $prefix_pg_local_command psql $pg_local_opts $@"
+    fi
+}
+
+db_exists() {
+    host="$1"
+    db="$2"
+
+    read result < <(
+        echo " SELECT COUNT(*)
+            FROM pg_database
+            WHERE datistemplate = false AND datname = '$db' " |
+        host_psql "$host" -qAt
+    )
+    test "$result" == 1
+}
+
+host_pg_drop() {
+    host="$1"
+    db="$2"
+
+    if [ -z "$host" ]; then
+        pg_drop "$db"
+    else
+        ssh-once "$host" -- \
+            "cd /; pg_drop '$db'"
+    fi
+}
+
+host_pg_chown() {
+    host="$1"
+    user="$2"
+    db="$3"
+
+    if [ -z "$host" ]; then
+        pg_chown "$user" "$db"
+    else
+        ssh-once "$host" -- \
+            "cd /; pg_chown '$user' '$db'"
+    fi
+}
+
+BACKUPS=/var/backups/pg
+host_pg_save() {
+    host="$1"
+    db="$2"
+
+    if [ -z "$host" ]; then
+        cd "$BACKUPS" &&
+        pg_save "$db"
+    else
+        ssh-once "$host" -- \
+            "cd "$BACKUPS" && pg_save '$db'"
+    fi
+}
+
+
+host_pg_dump() {
+    host="$1"
+    db="$2"
+    pipe="$3"
+
+    if [ -z "$host" ]; then
+        $prefix_pg_local_command pg_dump -Ox $pg_local_opts "$db" | $pipe
+    else
+        ssh-once "$host" -- \
+            "cd / ;
+             $prefix_pg_local_command pg_dump -Ox '$db' |
+             $pipe
+             "
+    fi
+}
+
+host_pg_fill() {
+    host="$1"
+    db="$2"
+    pipe="$3"
+
+    if [ -z "$host" ]; then
+        (sleep 0.1; pv -i 0.2 -cN "received") | buffer -m 8M |
+        $pipe |
+        (sleep 0.3; pv -i 0.2 -cN "unpacked") | buffer -m 8M |
+        (sleep 0.5; pv -i 0.2 -cN "fill") |
+        $prefix_pg_local_command psql $pg_local_opts "$db" > /dev/null
+    else
+        ssh-once "$host" -- \
+            "cd /
+             pv -f -cN received | buffer -m 8M |
+             $pipe |
+             (sleep 0.1; pv -f -cN unpacked) | buffer -m 8M |
+             (sleep 0.3; pv -f -cN fill) |
+             ($prefix_pg_local_command psql '$db' >/dev/null)"
+    fi
+}
+
+host_get_owner() {
+    host="$1"
+    db="$2"
+    echo "SELECT rolname
+        FROM pg_database pd
+        JOIN pg_authid ON pd.datdba = pg_authid.oid
+        WHERE datistemplate = false AND datname = '$db'" |
+        host_psql "$host" "$db" -qAt
+}
+
+host_createdb() {
+    host="$1"
+    owner="$2"
+    db="$3"
+
+    if [ -z "$host" ]; then
+        $prefix_pg_local_command createdb $pg_local_opts -O "$owner" "$db"
+    else
+        ssh-once "$host" -- \
+            "cd / ; $prefix_pg_local_command createdb -O '$owner' '$db'"
+    fi
+}
+
+parse_dbpattern() {
+
+python -c '
+import re
+import sys
+
+PATTERN = (r"^((?P<host>([^@]+@)?[a-zA-Z0-9.-]+):)?"
+           r"((?P<pguser>[a-zA-Z0-9_]+)@)?"
+           r"(?P<dbpattern>[a-zA-Z0-9_*]*)"
+           r"(:(?P<port>[0-9*]+))?$")
+
+def parse_db_pattern(p):
+    p = p or ""
+    match = re.search(PATTERN, p)
+    if not match:
+        print ("Pattern %s is not valid." % p)
+        exit(1)
+    return match.groupdict()
+
+parsed = parse_db_pattern("'$1'")
+
+sys.stdout.write("\0".join(parsed[k] if parsed[k] else ""
+                for k in ("host", "pguser", "dbpattern", "port")))
+'
+
+}
+
+read-0() {
+    while [ "$1" ] && IFS=$'\0' read -r -d '' "$1"; do
+        shift
+    done
+}
+
+ssh-once() {
+    ssh -o ControlPath=/tmp/ssh-control-master-$$ \
+        -o ControlMaster=auto -o ControlPersist=900 \
+        "$@"
+}
+
+ssh-quit() {
+    ssh-once -O exit "$@"
+}
+
+depends() {
+   missing=""
+   for cmd in "$@"; do
+       get_path "$cmd" >/dev/null || missing="$missing $cmd"
+   done
+   test "$missing" == "" || die "Missing dependencies:$missing"
+}
+
+host_version() {
+    host="$1"
+    echo "SELECT version()" |
+        host_psql "$host" -qAt
+}
+
+check_host() {
+    host="$1"
+
+    dependencies="pv buffer pg_copy"
+
+    if [ "$host" ]; then
+        ssh-once "$host" true || die "Couldn't reach host $host"
+        ssh-once "$host" '
+
+die() { echo $*; exit 1 ; }
+
+get_path() { (
+    IFS=:
+    for d in $PATH; do
+        filename="$d/$1"
+        if test -x "$filename"; then echo "$d/$1"; return 0; fi
+    done
+    return 1
+) }
+
+depends() {
+   missing=""
+   for cmd in "$@"; do
+       get_path "$cmd" >/dev/null || missing="$missing $cmd"
+   done
+   test "$missing" == "" || die "Missing dependencies on '"$host"':$missing"
+}
+
+depends '"$dependencies" || exit 1
+    else
+        depends $dependencies
+    fi
+}
+
+
+
+##
+## Actions
+##
+
+action_cp_usage="[-q] [-f | -b] SRC_DBNAME DST_DBNAME"
+action_cp_help="\
+Copy database SRC to DST database
+
+    -q       Use quicker templating system to make the copy, note that
+             all active session will be dropped.
+    -f       Force copy even if DST_DBNAME already exists (it'll overwrite it).
+    -b       As 'force' but will backup the database before overwriting it.
+"
+
+action_cp () {
+
+    cmdline=("$@")
+
+    quick=""
+    force=""
+    backup=""
+    while [ "$#" != 0 ]; do
+        case "$1" in
+            "-q") quick="true";;
+            "-b") backup="true";;
+            "-f") force="true";;
+            -*)
+                echo "No options $1."
+                print_usage
+                exit 1
+                ;;
+            "")
+                echo "Invalid '$1' argument."
+                print_usage
+                exit 1
+                ;;
+            *)
+                if [ -z "$src" ]; then src="$1"
+                elif [ -z "$dst" ]; then dst="$1"
+                else
+                    echo "Too much arguments..."
+                    print_usage
+                    exit 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    if [ -z "$src" -o -z "$dst" ]; then
+        echo "Missing argument"
+        print_usage
+        exit 1
+    fi
+
+    ##
+    ## Code
+    ##
+
+    read-0 shost suser sdb sport < <(parse_dbpattern "$src")
+    read-0 dhost duser ddb dport < <(parse_dbpattern "$dst")
+
+    [ "$sport" -o "$dport" ] && die "No support yet for specifying ports"
+    [ "$suser" ] && die "No support for specifying owner in source database."
+
+    check_host "$shost"
+    check_host "$dhost"
+
+    if [ "$shost" != "$dhost" ] && [ "$quick" ]; then
+        if [ "$quick" ]; then
+            die "You can't use quick copy option on different hosts."
+        fi
+
+        sversion="$(host_version "$shost")"
+        dversion="$(host_version "$dhost")"
+
+        if [ "$sversion" != "$dversion" ]; then
+            warn "Postgres version mismatch between hosts" \
+                "(src: $sversion, dst: $dversion). This might generate errors !"
+        fi
+
+    fi
+
+    if [ "$shost" == "$dhost" -a "$sdb" == "$ddb" ]; then
+        die "You can't copy the database on itself"
+    fi
+
+    if [ "$shost" == "$dhost" -a "$shost" ]; then
+        echo "Delegating command to $shost."
+        ssh "$shost" "$exname $action$(echo " ${cmdline[@]}" | sed -r "s/ $shost:/ /g")"
+        exit $?
+    fi
+
+    if ! db_exists "$shost" "$sdb"; then
+        die "Source database '$db' doesn't exists on " \
+            $([ "$shost" ] && echo "host '$shost'." || echo "localhost.")
+    fi
+
+    if db_exists "$dhost" "$ddb"; then
+        if [ -z "$force" -a -z "$backup" ]; then
+            die "Destination database '$ddb' already exists on " \
+                "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")" \
+                "Use '-f' or '-b' if you want to overwrite it, or archive it."
+        else
+            if [ "$backup" ]; then
+                host_pg_save "$dhost" "$ddb" || die "Couldn't archive $ddb on" \
+                    "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")"
+            fi
+            host_pg_drop "$dhost" "$ddb" ||
+            die "Couldn't drop database $ddb on " \
+                "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")"
+        fi
+    fi
+
+    if [ -z "$shost" -a -z "$dhost" ]; then
+
+        connections=$(echo "SELECT COUNT(DISTINCT procpid) AS count
+                FROM pg_stat_activity
+                WHERE datname = '$src'
+                  AND procpid <> pg_backend_pid()" |
+            $prefix_pg_local_command psql $pg_local_opts -qAt)
+
+        [ "$connections" == "0" ] && quick=true
+    else
+        quick=""
+    fi
+
+    drop_dst_db() {
+        stty echo
+        if [ "$to_drop" ]; then
+            echo "Dropping partial database $dst."
+            host_pg_drop "$dhost" "$ddb"
+        fi
+    }
+
+    if [ "$quick" ]; then
+        echo -n "Quick copy of $src to $dst. "
+        if [ "$connections" -gt "0" ]; then
+            echo "Cutting down $connections connections."
+        else
+            echo "No active connections."
+        fi
+        pg_drop_session "$src"
+
+        $prefix_pg_local_command createdb $pg_local_opts -O openerp "$dst" -T "$src" ||
+        die "createdb failed!"
+        exit 0
+
+    else
+        echo "Copy of $src to $dst."
+
+        if [ "$duser" ]; then
+            owner=$duser
+        else
+            owner=$(host_get_owner "$shost" "$sdb") || die "Couldn't get owner of $dst"
+        fi
+
+        to_drop=yes
+        host_createdb "$dhost" "$owner" "$ddb" || die "createdb failed!"
+        trap drop_dst_db EXIT
+        host_pg_dump "$shost" "$sdb" "$(
+        [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bzip2 -3")" |
+        host_pg_fill "$dhost" "$ddb" "$(
+        [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bunzip2")" ||
+        die "Copy failed !"
+        echo "Finished copy successfully."
+        to_drop=
+        if [ "$duser" ]; then
+            echo "Chowning $ddb on" \
+                "$([ "$dhost" ] && echo "host '$dhost'" || echo "localhost")" \
+                "to user $duser."
+            host_pg_chown "$dbhost" "$duser" "$ddb" || die "Chown to $duser failed."
+        fi
+    fi
+
+
+}
+
+##
+## Code
+##
+
+action="$1"
+shift
+
+exname=$(basename $0)
+
+depends buffer pv grep sed pg_dump psql
+
+ansi_color "$ansi_color"
+
+actions="$(set | grep -E "^action_[a-zA-Z0-9_]+ ()" | cut -f 1 -d " " | cut -f 2- -d "_")"
+
+valid_action() {
+    echo "$actions" | grep "^$1" >/dev/null;
+}
+
+if test -z "$action" || ! valid_action "$action"; then
+    [ "$action" ] && echo "Invalid action '$action'." >&2
+    print_usage
+    exit 1
+fi
+
+## complete name
+action=$(echo "$actions"  | grep "^$action")
+
+"action_$action" "$@"
