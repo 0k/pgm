@@ -255,17 +255,56 @@ host_pg_drop_session() {
         sql "$host" >/dev/null
 }
 
+
 BACKUPS=/var/backups/pg
 host_pg_save() {
+    local host db label
+
     host="$1"
     db="$2"
+    label="$3"
+
+    postfix="$(date +%FT%T | tr ":" "-")"
+    if [ "$label" ]; then
+        archive=${db}_${postfix}_$label.sql.bz2
+    else
+        archive=${db}_$postfix.sql.bz2
+    fi
+    echo "Saving to '$BACKUPS/$archive' on" \
+        $([ "$host" ] && echo "host '$host'." || echo "localhost.") \
+
+    _host_pg_save "$host" "$db" "$BACKUPS/$archive"
+}
+
+
+_host_pg_save() {
+    host="$1"
+    db="$2"
+    archive="$3"
 
     if [ -z "$host" ]; then
-        cd "$BACKUPS" &&
-        pg_save "$db"
+        cd /
+        $prefix_pg_local_command pg_dump $pg_local_opts -Ox "$db" |
+        bzip2 > "$archive"
+        pipe_errlvl="${PIPESTATUS[0]}" errlvl="$?"
+        if [ "$errlvl" != "0" -o "$pipe_errlvl" != 0 ]; then
+            err "Failed to save database."
+            rm -vf "$BACKUPS/$archive"
+            exit 1
+        fi
     else
-        ssh-once "$host" -- \
-            "cd "$BACKUPS" && pg_save '$db'"
+        ssh-once "$host" "\
+            cd /
+            $prefix_pg_local_command pg_dump $pg_local_opts -Ox "$db" |
+            bzip2 > "$archive"
+            pipe_errlvl="\${PIPESTATUS[0]}" errlvl="\$?"
+            if [ "\$errlvl" != "0" -o "\$pipe_errlvl" != 0 ]; then
+                echo "Removing partial database."
+                rm -vf "$BACKUPS/$archive"
+                exit 1
+            fi
+        "
+
     fi
 }
 
@@ -930,6 +969,78 @@ action_chown () {
     host_pg_chown "$host" "$owner" "$db"
 
 }
+
+
+action_save_usage="[-v] DBNAME [LABEL]"
+action_save_help="\
+Make a backup of the current database in $BACKUPS
+
+    -v       Verbose mode on.
+
+"
+
+action_save () {
+
+    cmdline=("$@")
+
+    label=""
+    target=""
+    force=""
+    VERBOSE=${VERBOSE:-}
+    while [ "$#" != 0 ]; do
+        case "$1" in
+            "-v") VERBOSE="true";;
+            "-f") force="true";;
+            -*)
+                err "No options $1."
+                print_usage
+                exit 1
+                ;;
+            "")
+                err "Invalid '$1' argument."
+                print_usage
+                exit 1
+                ;;
+            *)
+                if [ -z "$target" ]; then target="$1"
+                elif [ -z "$label" ]; then label="$1"
+                else
+                    echo "Too much arguments..."
+                    print_usage
+                    exit 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    if [ -z "$target" ]; then
+        err "Missing argument"
+        print_usage
+        exit 1
+    fi
+
+    ##
+    ## Code
+    ##
+
+    read-0 host user db port < <(parse_dbpattern "$target")
+
+    [ "$port" -o "$port" ] && die "No support yet for specifying ports"
+    [ "$user" ] && die "You don't need to specify owner on target database" \
+        "you'll save."
+
+    check_host "$host"
+
+    if ! db_exists "$host" "$db"; then
+        die "Target database '$db' doesn't exists on" \
+            $([ "$host" ] && echo "host '$host'." || echo "localhost.")
+    fi
+
+    host_pg_save "$host" "$db" "$label"
+
+}
+
 
 
 ##
