@@ -694,6 +694,86 @@ action_rm () {
 }
 
 
+action_kill_usage="[-v] DBNAME"
+action_kill_help="\
+Kill all active connection to the target DBNAME
+
+    -v       Verbose mode on.
+
+"
+
+action_kill () {
+
+    depends psql
+
+    cmdline=("$@")
+
+    target=""
+    VERBOSE=${VERBOSE:-}
+    while [ "$#" != 0 ]; do
+        case "$1" in
+            "-v") VERBOSE="true";;
+            -*)
+                err "No options $1."
+                print_usage
+                exit 1
+                ;;
+            "")
+                err "Invalid '$1' argument."
+                print_usage
+                exit 1
+                ;;
+            *)
+                if [ -z "$target" ]; then target="$1"
+                else
+                    echo "Too much arguments..."
+                    print_usage
+                    exit 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    if [ -z "$target" ]; then
+        err "Missing argument"
+        print_usage
+        exit 1
+    fi
+
+    ##
+    ## Code
+    ##
+
+    read-0 host user db port < <(parse_dbpattern "$target")
+
+    [ "$port" -o "$port" ] && die "No support yet for specifying ports"
+    [ "$suser" ] && die "You don't need to specify owner in database you'll kill."
+
+    check_host "$host"
+
+    if ! db_exists "$host" "$db"; then
+        die "Target database '$db' doesn't exists on" \
+            $([ "$host" ] && echo "host '$host'." || echo "localhost.")
+    fi
+
+
+    if [ "$VERBOSE" ]; then
+        ## additional information in verbose mode
+        connections=$(get_active_connection_nb "$host" "$db")
+        if ! [ "$connections" = "0" ]; then
+            verb "Closing $connections active connections to $target."
+            host_pg_drop_session "$host" "$db"
+        else
+            verb "There are no active connections to kill."
+        fi
+    else
+        host_pg_drop_session "$host" "$db"
+    fi
+
+}
+
+
 
 ##
 ## Code
