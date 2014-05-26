@@ -483,6 +483,16 @@ depends '"$dependencies" || exit 1
     else
         depends $dependencies
     fi
+
+    if ! echo "SELECT 1;" | host_psql "$host" -qAt >/dev/null 2>&1; then
+        die "Insufficient access: psql command non-working."
+    fi
+
+    if ! echo "SHOW is_superuser;" | host_psql "$host" -qAt >/dev/null 2>&1; then
+        die "Insufficient postgres permission on "\
+            $([ "$host" ] && echo "host '$host'." || echo "localhost.")
+    fi
+
 }
 
 get_active_connection_nb() {
