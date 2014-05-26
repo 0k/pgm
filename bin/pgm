@@ -606,6 +606,95 @@ action_cp () {
 
 }
 
+
+action_rm_usage="[-f] [-b] DBNAME"
+action_rm_help="\
+Drop database DBNAME
+
+    -f       Force drop even if there are active session opened.
+    -b       Make backup of the database before dropping it.
+"
+
+action_rm () {
+
+    depends psql
+
+    cmdline=("$@")
+
+    target=""
+    force=""
+    backup=""
+    while [ "$#" != 0 ]; do
+        case "$1" in
+            "-b") backup="true";;
+            "-f") force="true";;
+            -*)
+                err "No options $1."
+                print_usage
+                exit 1
+                ;;
+            "")
+                err "Invalid '$1' argument."
+                print_usage
+                exit 1
+                ;;
+            *)
+                if [ -z "$target" ]; then target="$1"
+                else
+                    echo "Too much arguments..."
+                    print_usage
+                    exit 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    if [ -z "$target" ]; then
+        err "Missing argument"
+        print_usage
+        exit 1
+    fi
+
+    ##
+    ## Code
+    ##
+
+    read-0 host user db port < <(parse_dbpattern "$target")
+
+    [ "$port" -o "$port" ] && die "No support yet for specifying ports"
+    [ "$suser" ] && die "You don't need to specify owner in database you remove."
+
+    check_host "$host"
+
+    if ! db_exists "$host" "$db"; then
+        die "Target database '$db' doesn't exists on" \
+            $([ "$host" ] && echo "host '$host'." || echo "localhost.")
+    fi
+
+    connections=$(get_active_connection_nb "$host" "$db")
+
+    if [ "$backup" ]; then
+        host_pg_save "$host" "$db" || die "Couldn't archive $db on" \
+            "$([ "$host" ] && echo "host '$host'." || echo "localhost.")"
+    fi
+
+    if ! [ "$connections" = "0" ]; then
+        if [ "$force" ]; then
+            warn "Closing $connections active connections to $target."
+            host_pg_drop_session "$host" "$db"
+        else
+            die "There are $connections active connections to $target."
+        fi
+    fi
+
+    echo "Dropping database '$target'." &&
+    host_pg_drop "$host" "$db" || die "Dropping $target failed."
+
+}
+
+
+
 ##
 ## Code
 ##
