@@ -229,13 +229,19 @@ db_exists() {
 host_pg_drop() {
     host="$1"
     db="$2"
+    echo "DROP DATABASE \"$2\";" | \
+        host_psql "$host" -qAt >/dev/null
+}
 
-    if [ -z "$host" ]; then
-        pg_drop "$db"
-    else
-        ssh-once "$host" -- \
-            "cd /; pg_drop '$db'"
-    fi
+host_pg_drop_session() {
+    local host db
+
+    host="$1"
+    db="$2"
+    echo "SELECT pg_terminate_backend(procpid)
+          FROM pg_stat_activity
+          WHERE procpid <> pg_backend_pid() AND datname = '$db';" | \
+        host_psql "$host" -qAt >/dev/null
 }
 
 host_pg_chown() {
@@ -562,7 +568,7 @@ action_cp () {
         else
             echo "No active connections."
         fi
-        pg_drop_session "$src"
+        host_pg_drop_session "$shost" "$src"
 
         $prefix_pg_local_command createdb $pg_local_opts -O openerp "$dst" -T "$src" ||
         die "createdb failed!"
