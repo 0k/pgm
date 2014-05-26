@@ -166,7 +166,9 @@ ansi_color() {
 
 warn() { echo "${YELLOW}Warning:$NORMAL" "$@" >&2 ; }
 info() { echo "${BLUE}II$NORMAL" "$@" >&2 ; }
-die() { echo "${RED}Error:$NORMAL" "$@" >&2 ; exit 1; }
+verb() { [ "$VERBOSE" ] && echo "$@" >&2 ; }
+err() { echo "${RED}Error:$NORMAL" "$@" >&2 ; }
+die() { err "$@" ; exit 1; }
 
 print_usage() {
     local act
@@ -445,12 +447,12 @@ action_cp () {
             "-b") backup="true";;
             "-f") force="true";;
             -*)
-                echo "No options $1."
+                err "No options $1."
                 print_usage
                 exit 1
                 ;;
             "")
-                echo "Invalid '$1' argument."
+                err "Invalid '$1' argument."
                 print_usage
                 exit 1
                 ;;
