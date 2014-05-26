@@ -189,8 +189,8 @@ print_usage() {
 
 [ -f "~/.pg_copy_db.rc" ] && . ~/.pg_copy_db.rc
 
-pg_local_opts=${pg_local_opts:-""}
-prefix_pg_local_command=${prefix_pg_local_command:-"sudo -u postgres"}
+export pg_local_opts=${pg_local_opts:-""}
+export prefix_pg_local_command=${prefix_pg_local_command:-"sudo -u postgres"}
 
 get_path() { (
     IFS=:
@@ -242,19 +242,6 @@ host_pg_drop_session() {
           FROM pg_stat_activity
           WHERE procpid <> pg_backend_pid() AND datname = '$db';" | \
         host_psql "$host" -qAt >/dev/null
-}
-
-host_pg_chown() {
-    host="$1"
-    user="$2"
-    db="$3"
-
-    if [ -z "$host" ]; then
-        pg_chown "$user" "$db"
-    else
-        ssh-once "$host" -- \
-            "cd /; pg_chown '$user' '$db'"
-    fi
 }
 
 BACKUPS=/var/backups/pg
@@ -320,6 +307,79 @@ host_get_owner() {
         host_psql "$host" "$db" -qAt
 }
 
+host_pg_chown() {
+
+    local host user db
+
+    host="$1"
+    user="$2"
+    db="$3"
+
+
+    [ "$VERBOSE" ] && wrap_opts="" || wrap_opts="-q"
+    Wrap $wrap_opts -d "Setting ownership on views" <<EOF || exit 1
+
+        echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO $user;'
+          FROM pg_views
+          WHERE schemaname = 'public'" |
+        host_psql "$host" "$db" -qAt |
+        host_psql "$host" "$db"
+EOF
+
+    Wrap $wrap_opts -d "Setting ownership on tables" <<EOF || exit 1
+       echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO $user;'
+          FROM pg_tables
+          WHERE schemaname = 'public'" |
+        host_psql "$host" "$db" -qAt |
+        host_psql "$host" "$db"
+EOF
+
+    Wrap $wrap_opts -d "Restating user permissions on tables" <<EOF || exit 1
+       echo "SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON ' ||
+                 tablename || ' TO $user;'
+          FROM pg_tables
+          WHERE schemaname = 'public'" |
+        host_psql "$host" "$db" -qAt |
+        host_psql "$host" "$db"
+EOF
+
+    Wrap $wrap_opts -d "Setting ownership on sequences" <<EOF || exit 1
+       echo "SELECT 'ALTER TABLE ' || sequence_name || ' OWNER TO $user;'
+          FROM information_schema.sequences
+          WHERE sequence_schema = 'public'" |
+        host_psql "$host" "$db" -qAt |
+        host_psql "$host" "$db"
+EOF
+
+    Wrap $wrap_opts -d "Setting ownership on database" <<EOF || exit 1
+       echo "ALTER DATABASE $db OWNER TO $user;" |
+       host_psql "$host" "$db"
+EOF
+
+}
+
+user_exists() {
+    host="$1"
+    user="$2"
+
+    [ "$(echo "SELECT 1 FROM pg_roles WHERE rolname='$user'" |
+         host_psql "$host" -qAt)" ]
+}
+
+host_create_user() {
+    host="$1"
+    user="$2"
+
+    [ "$VERBOSE" ] && wrap_opts="" || wrap_opts="-q"
+    Wrap $wrap_opts -d "Creating user $user" <<EOF || exit 1
+
+    echo "CREATE USER $user" |
+    host_psql "$host" >/dev/null || die "Can't create user."
+
+EOF
+
+}
+
 host_createdb() {
     host="$1"
     owner="$2"
@@ -366,8 +426,9 @@ read-0() {
     done
 }
 
+export master_pid=$$
 ssh-once() {
-    ssh -o ControlPath=/tmp/ssh-control-master-$$ \
+    ssh -o ControlPath=/tmp/ssh-control-master-${master_pid} \
         -o ControlMaster=auto -o ControlPersist=900 \
         "$@"
 }
@@ -433,6 +494,10 @@ get_active_connection_nb() {
                   AND procpid <> pg_backend_pid()" |
         host_psql "$host" -qAt
 }
+
+## These are used in subprocess
+export -f host_psql
+export -f ssh-once
 
 ##
 ## Actions
@@ -773,6 +838,86 @@ action_kill () {
 
 }
 
+
+action_chown_usage="[-v] USER DBNAME"
+action_chown_help="\
+Change owner of DBNAME to USER
+
+    -v       Verbose mode on.
+
+"
+
+action_chown () {
+
+    cmdline=("$@")
+
+    owner=""
+    target=""
+    force=""
+    VERBOSE=${VERBOSE:-}
+    while [ "$#" != 0 ]; do
+        case "$1" in
+            "-v") VERBOSE="true";;
+            "-f") force="true";;
+            -*)
+                err "No options $1."
+                print_usage
+                exit 1
+                ;;
+            "")
+                err "Invalid '$1' argument."
+                print_usage
+                exit 1
+                ;;
+            *)
+                if [ -z "$owner" ]; then owner="$1"
+                elif [ -z "$target" ]; then target="$1"
+                else
+                    echo "Too much arguments..."
+                    print_usage
+                    exit 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    if [ -z "$target" -o -z "$owner" ]; then
+        err "Missing argument"
+        print_usage
+        exit 1
+    fi
+
+    ##
+    ## Code
+    ##
+
+    read-0 host user db port < <(parse_dbpattern "$target")
+
+    [ "$port" -o "$port" ] && die "No support yet for specifying ports"
+    [ "$user" ] && die "You don't need to specify owner on target database" \
+        "you'll chown."
+
+    check_host "$host"
+
+    if ! db_exists "$host" "$db"; then
+        die "Target database '$db' doesn't exists on" \
+            $([ "$host" ] && echo "host '$host'." || echo "localhost.")
+    fi
+
+    if ! user_exists "$host" "$owner"; then
+        if [ "$force" ]; then
+            host_create_user "$host" "$owner"
+        else
+            die "No postgres user '$owner' on" \
+                $([ "$host" ] && echo "host '$host'." || echo "localhost.") \
+                "Use '-f' option to force creation of the user."
+        fi
+    fi
+
+    host_pg_chown "$host" "$owner" "$db"
+
+}
 
 
 ##
