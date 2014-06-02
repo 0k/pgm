@@ -480,21 +480,41 @@ host_pg_fill() {
     db="$2"
     pipe="$3"
 
-    if [ -z "$host" ]; then
-        (sleep 0.1; pv -i 0.2 -cN "received") | buffer -m 8M |
+    export -f err
+    export -f warn
+
+    rexec "$host" "
+
+        warn() { echo \"${YELLOW}Warning:$NORMAL\" \"\$@\" >&2 ; }
+        info() { echo \"${BLUE}II$NORMAL\" \"\$@\" >&2 ; }
+        verb() { [ \"$VERBOSE\" ] && echo \"\$@\" >&2 ; }
+        err() { echo \"${RED}Error:$NORMAL\" \"\$@\" >&2 ; }
+        die() { err \"\$@\" ; exit 1; }
+
+        output=\$(
+        (sleep 0.1; pv -i 0.2 -cN received) | buffer -m 8M |
         $pipe |
-        (sleep 0.3; pv -i 0.2 -cN "unpacked") | buffer -m 8M |
-        (sleep 0.5; pv -i 0.2 -cN "fill") |
-        $prefix_pg_local_command psql $pg_local_opts "$db" > /dev/null
-    else
-        ssh-once "$host" -- \
-            "cd /
-             pv -f -cN received | buffer -m 8M |
-             $pipe |
-             (sleep 0.1; pv -f -cN unpacked) | buffer -m 8M |
-             (sleep 0.3; pv -f -cN fill) |
-             ($prefix_pg_local_command psql '$db' >/dev/null)"
-    fi
+        (sleep 0.3; pv -i 0.2 -cN unpacked) | buffer -m 8M |
+        (sleep 0.5; pv -fi 0.2 -cN fill) |
+        (echo '\\set ON_ERROR_STOP on'; cat) |
+          $prefix_pg_local_command psql $pg_local_opts \"$db\" 2>&1 >/dev/null
+         )
+        errlvl=\"\$?\"
+        if [ \"\$errlvl\" == "0" -a -z \"\$output\" ]; then
+            exit 0
+        else
+            if [ \"\$errlvl\" != 0 ]; then
+                err 'There was some errors while filling database:'
+                echo \"\$output\"
+                exit 1
+            else
+                warn 'There was some message while filling database:'
+                echo \"\$output\"
+                exit 0
+            fi
+        fi
+"
+
 }
 
 host_get_owner() {
