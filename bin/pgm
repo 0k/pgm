@@ -1080,9 +1080,11 @@ action_save () {
 }
 
 
-action_ls_usage="[DBPATTERN]"
+action_ls_usage="[-s] [DBPATTERN]"
 action_ls_help="\
 List databases according to pattern
+
+    -s       Print only the database name.
 
 "
 
@@ -1090,10 +1092,11 @@ action_ls () {
 
     cmdline=("$@")
 
-    label=""
+    short=""
     target=""
     while [ "$#" != 0 ]; do
         case "$1" in
+            "-s") short="true";;
             -*)
                 err "No options $1."
                 print_usage
@@ -1130,7 +1133,11 @@ action_ls () {
     die "Couldn't retrieve database list."
 
     echo "$dbs" | while IFS=$'|' read -r database pguser size; do
-         printf "%-30s %-15s %10s\n" "$database" "$pguser" "$size"
+        if [ "$short" ]; then
+            echo "$database"
+        else
+            printf "%-30s %-15s %10s\n" "$database" "$pguser" "$size"
+        fi
     done
 
 }
