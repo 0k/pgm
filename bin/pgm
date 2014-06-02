@@ -437,7 +437,7 @@ host_createdb() {
 
 parse_dbpattern() {
 
-python -c '
+    python -c '
 import re
 import sys
 
@@ -450,14 +450,16 @@ def parse_db_pattern(p):
     p = p or ""
     match = re.search(PATTERN, p)
     if not match:
-        print ("Pattern %s is not valid." % p)
         exit(1)
     return match.groupdict()
 
 parsed = parse_db_pattern("'$1'")
 
-sys.stdout.write("\0".join(parsed[k] if parsed[k] else ""
-                for k in ("host", "pguser", "dbpattern", "port")))
+## The last value '1' is there to check the parsing was ok
+
+sys.stdout.write("\0".join([parsed[k] if parsed[k] else ""
+                for k in ("host", "pguser", "dbpattern", "port")] +
+                           ["1", ]) + "\0")
 '
 
 }
@@ -466,6 +468,21 @@ read-0() {
     while [ "$1" ] && IFS=$'\0' read -r -d '' "$1"; do
         shift
     done
+}
+
+read_dbpattern() {
+    local dbpattern check
+    dbpattern="$1"
+    vhost="$2"
+    vuser="$3"
+    vdb="$4"
+    vport="$5"
+
+    read-0 "$vhost" "$vuser" "$vdb" "$vport" check < <(parse_dbpattern "$dbpattern")
+
+    if [ "$check" != "1" ]; then
+        die "Pattern $dbpattern is not valid. Please try [[USER@]HOST:][PGUSER@][DBNAME][:PGPORT]."
+    fi
 }
 
 export master_pid=$$
@@ -609,8 +626,8 @@ action_cp () {
     ## Code
     ##
 
-    read-0 shost suser sdb sport < <(parse_dbpattern "$src")
-    read-0 dhost duser ddb dport < <(parse_dbpattern "$dst")
+    read_dbpattern "$src" shost suser sdb sport
+    read_dbpattern "$dst" dhost duser ddb dport
 
     [ "$sport" -o "$dport" ] && die "No support yet for specifying ports"
     [ "$suser" ] && die "No support for specifying owner in source database."
@@ -776,7 +793,7 @@ action_rm () {
     ## Code
     ##
 
-    read-0 host user db port < <(parse_dbpattern "$target")
+    read_dbpattern "$target" host user db port
 
     [ "$port" -o "$port" ] && die "No support yet for specifying ports"
     [ "$suser" ] && die "You don't need to specify owner in database you remove."
@@ -861,7 +878,7 @@ action_kill () {
     ## Code
     ##
 
-    read-0 host user db port < <(parse_dbpattern "$target")
+    read_dbpattern "$target" host user db port
 
     [ "$port" -o "$port" ] && die "No support yet for specifying ports"
     [ "$suser" ] && die "You don't need to specify owner in database you'll kill."
@@ -943,7 +960,7 @@ action_chown () {
     ## Code
     ##
 
-    read-0 host user db port < <(parse_dbpattern "$target")
+    read_dbpattern "$target" host user db port
 
     [ "$port" -o "$port" ] && die "No support yet for specifying ports"
     [ "$user" ] && die "You don't need to specify owner on target database" \
@@ -1024,7 +1041,7 @@ action_save () {
     ## Code
     ##
 
-    read-0 host user db port < <(parse_dbpattern "$target")
+    read_dbpattern "$target" host user db port
 
     [ "$port" -o "$port" ] && die "No support yet for specifying ports"
     [ "$user" ] && die "You don't need to specify owner on target database" \
