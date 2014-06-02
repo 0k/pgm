@@ -319,6 +319,8 @@ file_or_db_exists() {
 host_pg_drop() {
     host="$1"
     db="$2"
+
+    host_pg_drop_session "$host" "$db"
     echo "DROP DATABASE $2;" |
     sql "$host" >/dev/null
 }
