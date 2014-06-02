@@ -173,13 +173,24 @@ die() { err "$@" ; exit 1; }
 print_usage() {
     local act
 
-    (
+    if [ "$action" ] && valid_action "$action"; then
+        export action_${action}_help >/dev/null 2>&1
+        export action_${action}_usage >/dev/null 2>&1
+        export action_${action}_options >/dev/null 2>&1
+        echo "$(eval echo "\"\$action_${action}_help\"")"
+        echo
+        echo "usage:"
+        echo "  $exname $action $(eval echo "\$action_${action}_usage")"
+        echo
+        echo "options:"
+        echo "$(eval echo "\"\$action_${action}_options\"")" | sed -r 's/^/  /g'
+    else
         echo "usage:"
         for act in $actions; do
             export action_$act_usage >/dev/null 2>&1
             echo "  $exname $act $(eval echo \$action_${act}_usage)"
         done
-    ) >&2
+    fi >&2
 
 }
 
@@ -593,13 +604,12 @@ export -f ssh-once
 ##
 
 action_cp_usage="[-q] [-f | -b] SRC_DBNAME DST_DBNAME"
-action_cp_help="\
-Copy database SRC to DST database
-
-    -q       Use quicker templating system to make the copy, note that
-             all active session will be dropped.
-    -f       Force copy even if DST_DBNAME already exists (it'll overwrite it).
-    -b       As 'force' but will backup the database before overwriting it.
+action_cp_help="Copy database SRC to DST database"
+action_cp_options="\
+-q       Use quicker templating system to make the copy, note that
+         all active session will be dropped.
+-f       Force copy even if DST_DBNAME already exists (it'll overwrite it).
+-b       As 'force' but will backup the database before overwriting it.
 "
 
 action_cp () {
@@ -762,11 +772,10 @@ action_cp () {
 
 
 action_rm_usage="[-f] [-b] DBNAME"
-action_rm_help="\
-Drop database DBNAME
-
-    -f       Force drop even if there are active session opened.
-    -b       Make backup of the database before dropping it.
+action_rm_help="Drop database DBNAME"
+action_rm_options="\
+-f       Force drop even if there are active session opened.
+-b       Make backup of database(s) before dropping it.
 "
 
 action_rm () {
@@ -849,11 +858,9 @@ action_rm () {
 
 
 action_kill_usage="[-v] DBNAME"
-action_kill_help="\
-Kill all active connection to the target DBNAME
-
-    -v       Verbose mode on.
-
+action_kill_help="Kill all active connection to the target DBNAME"
+action_kill_options="\
+-v       Verbose mode on.
 "
 
 action_kill () {
@@ -929,11 +936,9 @@ action_kill () {
 
 
 action_chown_usage="[-v] USER DBNAME"
-action_chown_help="\
-Change owner of DBNAME to USER
-
-    -v       Verbose mode on.
-
+action_chown_help="Change owner of DBNAME to USER"
+action_chown_options="\
+-v       Verbose mode on.
 "
 
 action_chown () {
@@ -1010,11 +1015,9 @@ action_chown () {
 
 
 action_save_usage="[-v] DBNAME [LABEL]"
-action_save_help="\
-Make a backup of the current database in $BACKUPS
-
-    -v       Verbose mode on.
-
+action_save_help="Make a backup of the current database in $BACKUPS"
+action_save_options="\
+-v       Verbose mode on.
 "
 
 action_save () {
@@ -1081,12 +1084,10 @@ action_save () {
 
 
 action_ls_usage="[-s] [-c] [DBPATTERN]"
-action_ls_help="\
-List databases according to pattern
-
-    -s       Print only the database name.
-    -c       Show number of active connection to the database.
-
+action_ls_help="List databases according to pattern"
+action_ls_options="
+-s       Print only the database name.
+-c       Show number of active connection to the database.
 "
 
 action_ls () {
@@ -1155,12 +1156,11 @@ action_ls () {
 ## Code
 ##
 
-action="$1"
-shift
 
 exname=$(basename $0)
 
-depends buffer pv grep sed pg_dump psql
+## XXXvlab: all commands don't depend on all this strictly speaking.
+depends buffer pv grep sed psql
 
 ansi_color "$ansi_color"
 
@@ -1170,13 +1170,43 @@ valid_action() {
     echo "$actions" | grep "^$1" >/dev/null;
 }
 
+parse_generic_options() {
+    ## stores in 'action' the first non optional word of the command line
+    ## and stores in 'command' array all the other commands
+    ## additionally will take care of '--help' argument for all sub commands.
+    command=()
+    while [ "$#" != 0 ]; do
+        case "$1" in
+            --help)
+                print_usage
+                exit 0
+                ;;
+            -*)
+                command=("${command[@]}" "$1")
+                ;;
+            *)
+                ## ignore
+                if [ -z "$action" ]; then action="$1"
+                else
+                    command=("${command[@]}" "$1")
+                fi
+                :
+                ;;
+        esac
+        shift
+    done
+}
+
+parse_generic_options "$@"
+
 if test -z "$action" || ! valid_action "$action"; then
     [ "$action" ] && echo "Invalid action '$action'." >&2
     print_usage
     exit 1
 fi
 
+
 ## complete name
 action=$(echo "$actions"  | grep "^$action")
 
-"action_$action" "$@"
+"action_$action" "${command[@]}"
