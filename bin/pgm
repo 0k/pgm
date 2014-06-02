@@ -759,7 +759,7 @@ host_version() {
 check_host() {
     host="$1"
 
-    dependencies="pv buffer pg_copy"
+    dependencies="pv buffer file"
 
     if [ "$host" ]; then
         ssh-once "$host" true || die "Couldn't reach host $host"
