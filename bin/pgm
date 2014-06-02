@@ -321,8 +321,20 @@ host_pg_drop() {
     db="$2"
 
     host_pg_drop_session "$host" "$db"
+
+    [ "$VERBOSE" ] && echo "Dropping database '$db' on" \
+        "$([ "$host" ] && echo "host '$host'" || echo "localhost")..."
+
     echo "DROP DATABASE $2;" |
     sql "$host" >/dev/null
+
+    errlvl="$?"
+    if [ "$VERBOSE" ]; then
+        echo -n "     ... "
+        [ "$errlvl" == 0 ] && echo "ok" || echo "failed!"
+    fi
+    return $errlvl
+
 }
 
 host_pg_drop_session() {
@@ -599,12 +611,21 @@ host_createdb() {
     owner="$2"
     db="$3"
 
+    [ "$VERBOSE" ] && echo "Creating database '$db' on" \
+        "$([ "$host" ] && echo "host '$host'" || echo "localhost")..."
+
     if [ -z "$host" ]; then
         $prefix_pg_local_command createdb $pg_local_opts -O "$owner" "$db"
     else
         ssh-once "$host" -- \
             "cd / ; $prefix_pg_local_command createdb -O '$owner' '$db'"
     fi
+    errlvl="$?"
+    if [ "$VERBOSE" ]; then
+        echo -n "     ... "
+        [ "$errlvl" == 0 ] && echo "ok" || echo "failed!"
+    fi
+    return $errlvl
 }
 
 host_list_db() {
