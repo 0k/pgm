@@ -1080,11 +1080,12 @@ action_save () {
 }
 
 
-action_ls_usage="[-s] [DBPATTERN]"
+action_ls_usage="[-s] [-c] [DBPATTERN]"
 action_ls_help="\
 List databases according to pattern
 
     -s       Print only the database name.
+    -c       Show number of active connection to the database.
 
 "
 
@@ -1094,9 +1095,11 @@ action_ls () {
 
     short=""
     target=""
+    show_connections=""
     while [ "$#" != 0 ]; do
         case "$1" in
             "-s") short="true";;
+            "-c") show_connections="true";;
             -*)
                 err "No options $1."
                 print_usage
@@ -1135,6 +1138,10 @@ action_ls () {
     echo "$dbs" | while IFS=$'|' read -r database pguser size; do
         if [ "$short" ]; then
             echo "$database"
+        elif [ "$show_connections" ]; then
+            ## Could be much quicker if done in the postgres side.
+            conn=$(get_active_connection_nb "$host" "$database")
+            printf "%-30s %-15s %10s %10s\n" "$database" "$pguser" "$size" "$conn"
         else
             printf "%-30s %-15s %10s\n" "$database" "$pguser" "$size"
         fi
