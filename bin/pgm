@@ -730,7 +730,7 @@ depends() {
 
 host_version() {
     host="$1"
-    echo "SELECT version()" | sql "$host"
+    echo "SHOW server_version" | sql "$host"
 }
 
 check_host() {
