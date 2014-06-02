@@ -847,7 +847,7 @@ action_rm () {
             warn "Closing $connections active connections to $target."
             host_pg_drop_session "$host" "$db"
         else
-            die "There are $connections active connections to $target."
+            die "There are $connections active connections to $target. (Use -f to close them.)"
         fi
     fi
 
