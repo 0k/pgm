@@ -1012,7 +1012,7 @@ action_cp () {
             echo "Chowning $ddb on" \
                 "$([ "$dhost" ] && echo "host '$dhost'" || echo "localhost")" \
                 "to user $duser."
-            host_pg_chown "$dbhost" "$duser" "$ddb" || die "Chown to $duser failed."
+            host_pg_chown "$dhost" "$duser" "$ddb" || die "Chown to $duser failed."
         fi
     fi
 
