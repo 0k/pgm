@@ -237,14 +237,22 @@ export -f sql
 
 ## To be piped in it
 rexec() {
+    local host
     host="$1"
-    {
-        echo "cd /;"
-        cat -
-    } | if [ -z "$host" ]; then
-        bash
+
+    code="$(
+        echo "[ -d '$BACKUPS' ] && cd '$BACKUPS' || cd /;"
+        if [ "$2" ]; then
+            echo "$2"
+        else
+            cat
+        fi
+    )"
+
+    if [ -z "$host" ]; then
+        bash -c "$code"
     else
-        ssh-once "$host" bash
+        ssh-once "$host" -- "$code"
     fi
 }
 
