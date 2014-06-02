@@ -270,6 +270,27 @@ db_exists() {
     test "$result" == 1
 }
 
+file_exists() {
+    local host file
+    host="$1"
+    file="$2"
+
+    echo "[ -e '$file' ]" | rexec "$host"
+}
+
+file_or_db_exists() {
+    local host file db
+    host="$1"
+    file="$2"
+    db="$3"
+
+    if [ "$file" ]; then
+        file_exists "$host" "$file"
+    else
+        db_exists "$host" "$db"
+    fi
+}
+
 host_pg_drop() {
     host="$1"
     db="$2"
