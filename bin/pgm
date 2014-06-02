@@ -435,6 +435,26 @@ host_createdb() {
     fi
 }
 
+host_list_db() {
+    host="$1"
+    dbpattern="${2/\*/%}"
+    dbpattern="${dbpattern:-%}"
+    user=${3:-%%}
+
+    ## XXXvlab: lots of possibilities for sql injection, but hum, anyway
+    ## we are already superuser of postgres, so... well...
+    echo "
+        SELECT datname AS database,
+               rolname AS user
+        FROM pg_database pd
+        JOIN pg_authid ON pd.datdba = pg_authid.oid
+        WHERE datistemplate = false AND
+              rolname LIKE '$user' AND
+              datname LIKE '$dbpattern'
+        ORDER BY pd.datname" | sql "$host"
+
+}
+
 parse_dbpattern() {
 
     python -c '
@@ -1055,6 +1075,62 @@ action_save () {
     fi
 
     host_pg_save "$host" "$db" "$label"
+
+}
+
+
+action_ls_usage="[DBPATTERN]"
+action_ls_help="\
+List databases according to pattern
+
+"
+
+action_ls () {
+
+    cmdline=("$@")
+
+    label=""
+    target=""
+    while [ "$#" != 0 ]; do
+        case "$1" in
+            -*)
+                err "No options $1."
+                print_usage
+                exit 1
+                ;;
+            "")
+                err "Invalid '$1' argument."
+                print_usage
+                exit 1
+                ;;
+            *)
+                if [ -z "$target" ]; then target="$1"
+                else
+                    echo "Too much arguments..."
+                    print_usage
+                    exit 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    ##
+    ## Code
+    ##
+
+    read_dbpattern "$target" host user db port
+
+    [ "$port" ] && die "No support yet for specifying ports"
+
+    check_host "$host"
+
+    dbs=$(host_list_db "$host" "$db" "$user") ||
+    die "Couldn't retrieve database list."
+
+    echo "$dbs" | while IFS=$'|' read -r database pguser; do
+         printf "%-30s %-20s\n" "$database" "$pguser"
+    done
 
 }
 
