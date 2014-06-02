@@ -445,7 +445,8 @@ host_list_db() {
     ## we are already superuser of postgres, so... well...
     echo "
         SELECT datname AS database,
-               rolname AS user
+               rolname AS user,
+               pg_size_pretty(pg_database_size(pd.datname)) AS size
         FROM pg_database pd
         JOIN pg_authid ON pd.datdba = pg_authid.oid
         WHERE datistemplate = false AND
@@ -1128,8 +1129,8 @@ action_ls () {
     dbs=$(host_list_db "$host" "$db" "$user") ||
     die "Couldn't retrieve database list."
 
-    echo "$dbs" | while IFS=$'|' read -r database pguser; do
-         printf "%-30s %-20s\n" "$database" "$pguser"
+    echo "$dbs" | while IFS=$'|' read -r database pguser size; do
+         printf "%-30s %-15s %10s\n" "$database" "$pguser" "$size"
     done
 
 }
