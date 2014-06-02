@@ -278,6 +278,31 @@ file_exists() {
     echo "[ -e '$file' ]" | rexec "$host"
 }
 
+host_rename() {
+    local host file
+    host="$1"
+    file="$2"
+
+    cat <<EOF | rexec "$host"
+
+    name="$2"
+    dirname=\$(dirname \$name)
+    basename=\$(basename \$name)
+    first_part=\$(echo "\$basename" | cut -f 1 -d ".")
+    end_part=\$(echo "\$basename" | cut -f 2- -d ".")
+
+    i=1
+    new_name="\$dirname/\${first_part}-\$i.\${end_part}"
+    while [ -e "\$new_name" ]; do
+        i=\$[\$i + 1]
+        new_name="\$dirname/\${first_part}-\$i.\${end_part}"
+    done
+
+    mv -v "\$name" "\$new_name"
+EOF
+
+}
+
 file_or_db_exists() {
     local host file db
     host="$1"
