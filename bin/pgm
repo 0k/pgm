@@ -387,6 +387,77 @@ _host_pg_save() {
     fi
 }
 
+host_stream_from_file() {
+    local host filename pipe
+    host="$1"
+    filename="$2"
+    pipe="$3"
+    rexec "$host" "
+
+filename=\"$filename\"
+uncompress() {
+    local ft
+    ft=\$(file \"\$filename\")
+    if echo \"\$ft\" | grep \"bzip2 compressed\" > /dev/null 2>&1; then
+       bunzip2
+    elif echo \"\$ft\" | grep \"gzip compressed\" > /dev/null 2>&1; then
+       gunzip
+    else
+       cat
+    fi
+}
+cat \"\$filename\" | uncompress | $pipe
+"
+}
+
+host_stream_to_file() {
+    local host filename pipe
+    host="$1"
+    filename="$2"
+    pipe="$3"
+
+    rexec "$host" "
+filename=\"$filename\"
+compress() {
+    if [[ \"\$filename\" == *\".bz2\" ]]; then
+       bzip2
+    elif [[ \"\$filename\" == *\".gz\" ]]; then
+       gzip
+    else
+       echo 'Warning: unknown extension, outputing to RAW sql.' >&2
+       cat
+    fi
+}
+$pipe | compress > \"\$filename\"
+"
+}
+
+stream_from_file_or_database() {
+    local host file db pipe
+    host="$1"
+    file="$2"
+    db="$3"
+    pipe="$4"
+    if [ "$file" ]; then
+        host_stream_from_file "$host" "$file" "$pipe"
+    else
+        host_pg_dump "$host" "$db" "$pipe"
+    fi
+}
+
+stream_to_file_or_database() {
+    local host file db pipe
+    host="$1"
+    file="$2"
+    db="$3"
+    pipe="$4"
+
+    if [ "$file" ]; then
+        host_stream_to_file "$host" "$file" "$pipe"
+    else
+        host_pg_fill "$host" "$db" "$pipe"
+    fi
+}
 
 host_pg_dump() {
     host="$1"
