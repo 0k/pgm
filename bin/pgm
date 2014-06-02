@@ -849,8 +849,8 @@ action_cp () {
     ## Code
     ##
 
-    read_dbpattern "$src" shost suser sdb sport
-    read_dbpattern "$dst" dhost duser ddb dport
+    read_dbpattern "$src" shost suser sdb sport sfile
+    read_dbpattern "$dst" dhost duser ddb dport dfile
 
     [ "$sport" -o "$dport" ] && die "No support yet for specifying ports"
     [ "$suser" ] && die "No support for specifying owner in source database."
@@ -858,7 +858,13 @@ action_cp () {
     check_host "$shost"
     check_host "$dhost"
 
-    if [ "$shost" != "$dhost" ] && [ "$quick" ]; then
+    if [ "$sfile" -o "$dfile" ]; then
+        if [ "$quick" ]; then
+            die "You can use quick copy only if source and destination are both database."
+        fi
+    fi
+
+    if [ -z "$sfile" -a -z "$dfile" -a "$shost" != "$dhost" ]; then
         if [ "$quick" ]; then
             die "You can't use quick copy option on different hosts."
         fi
@@ -870,11 +876,14 @@ action_cp () {
             warn "Postgres version mismatch between hosts" \
                 "(src: $sversion, dst: $dversion). This might generate errors !"
         fi
-
     fi
 
-    if [ "$shost" == "$dhost" -a "$sdb" == "$ddb" ]; then
+    if [ -z "$sfile" -a -z "$dfile" -a "$shost" == "$dhost" -a "$sdb" == "$ddb" ]; then
         die "You can't copy the database on itself"
+    fi
+
+    if [ "$sfile" -a "$shost" == "$dhost" -a "$sfile" == "$dfile" ]; then
+        die "You can't copy files on itself"
     fi
 
     if [ "$shost" == "$dhost" -a "$shost" ]; then
@@ -883,28 +892,58 @@ action_cp () {
         exit $?
     fi
 
-    if ! db_exists "$shost" "$sdb"; then
-        die "Source database '$db' doesn't exists on " \
+    if ! file_or_db_exists "$shost" "$sfile" "$sdb"; then
+        die "Source file or database '$sdb$sfile' not found on" \
             $([ "$shost" ] && echo "host '$shost'." || echo "localhost.")
     fi
 
-    if db_exists "$dhost" "$ddb"; then
-        if [ -z "$force" -a -z "$backup" ]; then
-            die "Destination database '$ddb' already exists on " \
-                "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")" \
-                "Use '-f' or '-b' if you want to overwrite it, or archive it."
-        else
-            if [ "$backup" ]; then
-                host_pg_save "$dhost" "$ddb" || die "Couldn't archive $ddb on" \
-                    "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")"
+    if [ -z "$dfile" ]; then
+        ## getting final owner (usefull only if destination is a database)
+        if [ "$duser" ]; then  ## owner was specified
+            owner=$duser
+        else  ## Let's take the current owner of the source if possible
+            if [ -z "$sfile" ]; then
+                owner=$(host_get_owner "$shost" "$sdb") || die "Couldn't get owner of $src"
+            else
+                die "Please specify a destination database owner."
             fi
-            host_pg_drop "$dhost" "$ddb" ||
-            die "Couldn't drop database $ddb on " \
-                "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")"
         fi
     fi
 
-    if [ -z "$shost" -a -z "$dhost" ]; then
+    if file_or_db_exists "$dhost" "$dfile" "$ddb"; then
+        if [ -z "$force" -a -z "$backup" ]; then
+            if [ "$dfile" ]; then
+                die "Destination file '$dfile' already exists on" \
+                    "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")" \
+                    "Use '-f' or '-b' if you want to overwrite it, or rename it."
+            else
+                die "Destination database '$ddb' already exists on" \
+                    "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")" \
+                    "Use '-f' or '-b' if you want to overwrite it, or archive it."
+            fi
+        else
+            if [ "$backup" ]; then
+                if [ "$dfile" ]; then
+                    host_rename "$dhost" "$dfile" || die "Couldn't rename $dfile on" \
+                        "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")"
+                else
+                    host_pg_save "$dhost" "$ddb" || die "Couldn't archive $ddb on" \
+                        "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")"
+                fi
+            fi
+            if [ "$dfile" ]; then
+                ## file will be overritten by copy command.
+                :
+            else
+                host_pg_drop "$dhost" "$ddb" ||
+                die "Couldn't drop database $ddb on" \
+                    "$([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.")"
+            fi
+        fi
+    fi
+
+
+    if [ -z "$sfile" -a -z "$dfile" -a -z "$shost" -a -z "$dhost" ]; then
         connections=$(get_active_connection_nb "$shost" "$src")
         [ "$connections" == "0" ] && quick=true
     else
@@ -923,30 +962,25 @@ action_cp () {
         echo -n "Quick copy of $src to $dst. "
         if [ "$connections" -gt "0" ]; then
             echo "Cutting down $connections connections."
-        else
-            echo "No active connections."
+            host_pg_drop_session "$shost" "$src"
         fi
-        host_pg_drop_session "$shost" "$src"
 
         $prefix_pg_local_command createdb $pg_local_opts -O openerp "$dst" -T "$src" ||
         die "createdb failed!"
         exit 0
 
     else
-        echo "Copy of $src to $dst."
 
-        if [ "$duser" ]; then
-            owner=$duser
-        else
-            owner=$(host_get_owner "$shost" "$sdb") || die "Couldn't get owner of $dst"
+        if [ -z "$dfile" ]; then
+            to_drop=yes
+            host_createdb "$dhost" "$owner" "$ddb" || die "createdb failed!"
+            trap drop_dst_db EXIT
         fi
 
-        to_drop=yes
-        host_createdb "$dhost" "$owner" "$ddb" || die "createdb failed!"
-        trap drop_dst_db EXIT
-        host_pg_dump "$shost" "$sdb" "$(
+        echo "Copy of $src to $dst."
+        stream_from_file_or_database "$shost" "$sfile" "$sdb" "$(
         [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bzip2 -3")" |
-        host_pg_fill "$dhost" "$ddb" "$(
+        stream_to_file_or_database "$dhost" "$dfile" "$ddb" "$(
         [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bunzip2")" ||
         die "Copy failed !"
         echo "Finished copy successfully."
@@ -1015,10 +1049,11 @@ action_rm () {
     ## Code
     ##
 
-    read_dbpattern "$target" host user db port
+    read_dbpattern "$target" host user db port file
 
     [ "$port" -o "$port" ] && die "No support yet for specifying ports"
     [ "$suser" ] && die "You don't need to specify owner in database you remove."
+    [ "$file" ] && die "No support yet for deleting file"
 
     check_host "$host"
 
@@ -1098,10 +1133,11 @@ action_kill () {
     ## Code
     ##
 
-    read_dbpattern "$target" host user db port
+    read_dbpattern "$target" host user db port file
 
     [ "$port" -o "$port" ] && die "No support yet for specifying ports"
-    [ "$suser" ] && die "You don't need to specify owner in database you'll kill."
+    # [ "$user" ] && die "You don't need to specify owner in database you'll kill."
+    [ "$file" ] && die "You can't kill a file !."
 
     check_host "$host"
 
@@ -1178,11 +1214,12 @@ action_chown () {
     ## Code
     ##
 
-    read_dbpattern "$target" host user db port
+    read_dbpattern "$target" host user db port file
 
     [ "$port" -o "$port" ] && die "No support yet for specifying ports"
     [ "$user" ] && die "You don't need to specify owner on target database" \
         "you'll chown."
+    [ "$file" ] && die "You can't change ownership of a non-database."
 
     check_host "$host"
 
@@ -1257,11 +1294,13 @@ action_save () {
     ## Code
     ##
 
-    read_dbpattern "$target" host user db port
+    read_dbpattern "$target" host user db port file
 
     [ "$port" -o "$port" ] && die "No support yet for specifying ports"
     [ "$user" ] && die "You don't need to specify owner on target database" \
         "you'll save."
+    [ "$file" ] && die "You can't save a non-database."
+
 
     check_host "$host"
 
