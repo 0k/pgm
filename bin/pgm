@@ -559,7 +559,7 @@ host_pg_chown() {
 EOF
 
     Wrap $wrap_opts -d "Setting ownership on tables" <<EOF || exit 1
-       echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO $user;'
+       echo "SELECT 'ALTER TABLE ' || tablename || ' OWNER TO $user;'
           FROM pg_tables
           WHERE schemaname = 'public'" |
        sql "$host" "$db" | sql "$host" "$db"
