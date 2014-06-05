@@ -342,10 +342,16 @@ host_pg_drop_session() {
 
     host="$1"
     db="$2"
-    echo "SELECT pg_terminate_backend(procpid)
+    if version_gt "$(host_version "$host")" 9.2.0; then
+        echo "SELECT pg_terminate_backend(pid)
           FROM pg_stat_activity
-          WHERE procpid <> pg_backend_pid() AND datname = '$db';" | \
-        sql "$host" >/dev/null
+          WHERE pid <> pg_backend_pid() AND datname = '$db';"
+    else
+        echo "SELECT pg_terminate_backend(procpid)
+          FROM pg_stat_activity
+          WHERE procpid <> pg_backend_pid() AND datname = '$db';"
+    fi | sql "$host" >/dev/null
+
 }
 
 
@@ -800,14 +806,22 @@ depends '"$dependencies" || exit 1
 
 }
 
+function version_gt() { test "$(echo "$@" | tr " " "\n" | sort -V | tail -n 1)" == "$1"; }
+
 get_active_connection_nb() {
     host="$1"
     src="$2"
-    echo "SELECT COUNT(DISTINCT procpid) AS count
+    if version_gt "$(host_version "$host")" 9.2.0; then
+        echo "SELECT COUNT(DISTINCT pid) AS count
                 FROM pg_stat_activity
                 WHERE datname = '$src'
-                  AND procpid <> pg_backend_pid()" |
-    sql "$host"
+                  AND pid <> pg_backend_pid()"
+    else
+        echo "SELECT COUNT(DISTINCT procpid) AS count
+                FROM pg_stat_activity
+                WHERE datname = '$src'
+                  AND procpid <> pg_backend_pid()"
+    fi | sql "$host"
 }
 
 ## These are used in subprocess
