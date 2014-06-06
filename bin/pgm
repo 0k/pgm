@@ -217,7 +217,7 @@ host_psql() {
     host="$1"
     shift
     if [ -z "$host" ]; then
-        $prefix_pg_local_command psql $pg_local_opts "$@"
+        (cd / ; $prefix_pg_local_command psql $pg_local_opts "$@")
     else
         ssh-once "$host" \
             "cd /; $prefix_pg_local_command psql $pg_local_opts $@"
