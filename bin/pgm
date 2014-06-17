@@ -216,12 +216,7 @@ get_path() { (
 host_psql() {
     host="$1"
     shift
-    if [ -z "$host" ]; then
-        (cd / ; $prefix_pg_local_command psql $pg_local_opts "$@")
-    else
-        ssh-once "$host" \
-            "cd /; $prefix_pg_local_command psql $pg_local_opts $@"
-    fi
+    rexec "$host" "$prefix_pg_local_command psql $pg_local_opts $*"
 }
 
 ## To be piped in it
@@ -255,6 +250,8 @@ rexec() {
         ssh-once "$host" -- "$code"
     fi
 }
+export -f rexec
+
 
 db_exists() {
     local host db
