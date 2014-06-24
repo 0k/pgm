@@ -999,10 +999,10 @@ action_cp () {
         echo -n "Quick copy of $src to $dst. "
         if [ "$connections" -gt "0" ]; then
             echo "Cutting down $connections connections."
-            host_pg_drop_session "$shost" "$src"
+            host_pg_drop_session "$shost" "$sdb"
         fi
 
-        $prefix_pg_local_command createdb $pg_local_opts -O openerp "$dst" -T "$src" ||
+        $prefix_pg_local_command createdb $pg_local_opts -O openerp "$ddb" -T "$sdb" ||
         die "createdb failed!"
         exit 0
 
