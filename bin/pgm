@@ -822,6 +822,11 @@ get_active_connection_nb() {
     fi | sql "$host" "postgres"
 }
 
+filter_role_instructions() {
+    egrep -v "^ALTER (TABLE|SCHEMA) [a-zA-Z0-9._-]+ OWNER TO \"?.*\"?;$" |
+    egrep -v "^(GRANT|REVOKE) (ALL|SELECT) ON TABLE [a-zA-Z0-9._-]+ (FROM|TO) \"?.*\"?;$"
+}
+
 ## These are used in subprocess
 export -f host_psql
 export -f ssh-once
@@ -1015,6 +1020,7 @@ action_cp () {
         echo "Copy of $src to $dst."
         stream_from_file_or_database "$shost" "$sfile" "$sdb" "$(
         [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bzip2 -3")" |
+        filter_role_instructions |
         stream_to_file_or_database "$dhost" "$dfile" "$ddb" "$(
         [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bunzip2")" ||
         die "Copy failed !"
