@@ -670,7 +670,8 @@ host_list_file() {
     ## we are already user postgres or equivalent, so... well...
 
     cat <<EOF | rexec "$host" | sed -r 's%^\./%%g' | sed -r 's%(\|[0-9.]+)M%\1 MB%g;s%(\|[0-9.]+)K%\1 kB%g;s%(\|[0-9.]+)$%\1  B%g'
-    cd $base_dir
+    [ -d "$base_dir" ] || exit 1
+    cd "$base_dir"
     if [ -d "$fpattern" ]; then
        fpattern="$fpattern/*"
     else
