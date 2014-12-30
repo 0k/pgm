@@ -265,7 +265,7 @@ db_exists() {
         echo " SELECT COUNT(*)
             FROM pg_database
             WHERE datistemplate = false AND datname = '$db' " |
-        sql "$host"
+        sql "$host" "postgres"
     )
     test "$result" == 1
 }
@@ -326,7 +326,7 @@ host_pg_drop() {
         "$([ "$host" ] && echo "host '$host'" || echo "localhost")..."
 
     echo "DROP DATABASE $2;" |
-    sql "$host" >/dev/null
+    sql "$host" "postgres" >/dev/null
 
     errlvl="$?"
     if [ "$VERBOSE" ]; then
@@ -350,7 +350,7 @@ host_pg_drop_session() {
         echo "SELECT pg_terminate_backend(procpid)
           FROM pg_stat_activity
           WHERE procpid <> pg_backend_pid() AND datname = '$db';"
-    fi | sql "$host" >/dev/null
+    fi | sql "$host" "postgres" >/dev/null
 
 }
 
@@ -598,7 +598,7 @@ user_exists() {
     user="$2"
 
     [ "$(echo "SELECT 1 FROM pg_roles WHERE rolname='$user'" |
-         sql "$host")" ]
+         sql "$host" "postgres")" ]
 }
 
 host_create_user() {
@@ -607,7 +607,7 @@ host_create_user() {
 
     [ "$VERBOSE" ] && wrap_opts="" || wrap_opts="-q"
     Wrap $wrap_opts -d "Creating user $user" <<EOF || exit 1
-    echo "CREATE USER $user" | sql "$host"
+    echo "CREATE USER $user" | sql "$host" "postgres"
 EOF
 
 }
@@ -652,7 +652,7 @@ host_list_db() {
         WHERE datistemplate = false AND
               rolname LIKE '$user' AND
               datname LIKE '$dbpattern'
-        ORDER BY pd.datname" | sql "$host"
+        ORDER BY pd.datname" | sql "$host" "postgres"
 
 }
 
@@ -759,7 +759,7 @@ depends() {
 
 host_version() {
     host="$1"
-    echo "SHOW server_version" | sql "$host"
+    echo "SHOW server_version" | sql "$host" "postgres"
 }
 
 check_host() {
@@ -795,12 +795,12 @@ depends '"$dependencies" || exit 1
         depends $dependencies
     fi
 
-    if ! echo "SELECT 1;" | sql "$host" >/dev/null 2>&1; then
+    if ! echo "SELECT 1;" | sql "$host" "postgres" >/dev/null; then
         die "Insufficient access: psql command non-working."
     fi
 
-    if ! echo "SHOW is_superuser;" | sql "$host" >/dev/null 2>&1; then
-        die "Insufficient postgres permission on "\
+    if ! echo "SHOW is_superuser;" | sql "$host" "postgres" >/dev/null; then
+        die "Insufficient postgres permission on" \
             $([ "$host" ] && echo "host '$host'." || echo "localhost.")
     fi
 
@@ -821,7 +821,7 @@ get_active_connection_nb() {
                 FROM pg_stat_activity
                 WHERE datname = '$src'
                   AND procpid <> pg_backend_pid()"
-    fi | sql "$host"
+    fi | sql "$host" "postgres"
 }
 
 ## These are used in subprocess
