@@ -198,7 +198,7 @@ print_usage() {
 ## Common
 ##
 
-[ -f "~/.pg_copy_db.rc" ] && . ~/.pg_copy_db.rc
+[ -f ~/.pgm.rc ] && . ~/.pgm.rc
 
 export pg_local_opts=${pg_local_opts:-""}
 export prefix_pg_local_command=${prefix_pg_local_command:-"sudo -u postgres"}
