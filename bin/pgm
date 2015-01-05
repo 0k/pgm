@@ -224,7 +224,7 @@ sql() {
     host="$1"
     shift
     {
-        echo "\set ON_ERROR_STOP on"
+        [ "$IGNORE_ERRORS" ] || echo "\set ON_ERROR_STOP on"
         cat -
     } | host_psql "$host" -qAt "$@"
 }
