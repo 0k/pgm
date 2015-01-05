@@ -377,31 +377,15 @@ _host_pg_save() {
     host="$1"
     db="$2"
     archive="$3"
-
-    if [ -z "$host" ]; then
-        cd /
-        $prefix_pg_local_command pg_dump $pg_local_opts -Ox "$db" |
-        bzip2 > "$archive"
-        pipe_errlvl="${PIPESTATUS[0]}" errlvl="$?"
-        if [ "$errlvl" != "0" -o "$pipe_errlvl" != 0 ]; then
-            err "Failed to save database."
-            rm -vf "$BACKUPS/$archive"
-            exit 1
-        fi
-    else
-        ssh-once "$host" "\
-            cd /
-            $prefix_pg_local_command pg_dump $pg_local_opts -Ox "$db" |
-            bzip2 > "$archive"
-            pipe_errlvl="\${PIPESTATUS[0]}" errlvl="\$?"
-            if [ "\$errlvl" != "0" -o "\$pipe_errlvl" != 0 ]; then
-                echo "Removing partial database."
-                rm -vf "$BACKUPS/$archive"
+    rexec "$host" "\
+            $prefix_pg_local_command pg_dump $pg_local_opts -Ox \"$db\" |
+            bzip2 > \"$archive\"
+            pipe_errlvl=\"\\${PIPESTATUS[0]}\" errlvl=\"\$?\"
+            if [ \"\$errlvl\" != 0 -o \"\$pipe_errlvl\" != 0 ]; then
+                rm -vf \"$BACKUPS/$archive\"
                 exit 1
             fi
         "
-
-    fi
 }
 
 host_stream_from_file() {
