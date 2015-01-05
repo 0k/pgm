@@ -43,10 +43,10 @@ You must have ``postgres`` and ``ssh`` server installed and running of
 course on each host you need to join.
 
 To avoid typing passwords, you should use and setup each of your
-intended hosts with password less authentification (Key pair
+target hosts with password less authentification (key pair
 authentification for instance).
 
-And at least, you should make sure your system user on the destination
+By default, you could make sure your system user on the destination
 host can ``sudo -u postgres`` without password. You could add this
 line to ``/etc/sudoers`` for instance::
 
