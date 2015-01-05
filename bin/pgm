@@ -414,7 +414,9 @@ uncompress() {
        cat
     fi
 }
-cat \"\$filename\" | uncompress | $pipe
+cat \"\$filename\" | uncompress |
+    filter_role_instructions |
+    $pipe
 "
 }
 
@@ -821,6 +823,8 @@ filter_role_instructions() {
 ## These are used in subprocess
 export -f host_psql
 export -f ssh-once
+export -f filter_role_instructions
+
 
 ##
 ## Actions
@@ -1011,7 +1015,6 @@ action_cp () {
         echo "Copy of $src to $dst."
         stream_from_file_or_database "$shost" "$sfile" "$sdb" "$(
         [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bzip2 -3")" |
-        filter_role_instructions |
         stream_to_file_or_database "$dhost" "$dfile" "$ddb" "$(
         [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bunzip2")" ||
         die "Copy failed !"
