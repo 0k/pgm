@@ -784,8 +784,8 @@ depends '"$dependencies" || exit 1
         depends $dependencies
     fi
 
-    if ! echo "SELECT 1;" | sql "$host" "postgres" >/dev/null; then
-        die "Insufficient access: psql command non-working."
+    if ! echo "SELECT 1;" | sql "$host" postgres >/dev/null 2>&1; then
+        die "Insufficient access: psql command non-working on '$host'."
     fi
 
     if ! echo "SHOW is_superuser;" | sql "$host" "postgres" >/dev/null; then
