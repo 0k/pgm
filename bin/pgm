@@ -474,15 +474,8 @@ host_pg_dump() {
     db="$2"
     pipe="$3"
 
-    if [ -z "$host" ]; then
-        $prefix_pg_local_command pg_dump -Ox $pg_local_opts "$db" | $pipe
-    else
-        ssh-once "$host" -- \
-            "cd / ;
-             \$prefix_pg_local_command pg_dump \$pg_local_opts -Ox '$db' |
-             $pipe
-             "
-    fi
+    rexec "$host" "\$prefix_pg_local_command pg_dump \$pg_local_opts -Ox '$db' | $pipe"
+
 }
 
 host_pg_fill() {
@@ -610,12 +603,8 @@ host_createdb() {
     [ "$VERBOSE" ] && echo "Creating database '$db' on" \
         "$([ "$host" ] && echo "host '$host'" || echo "localhost")..."
 
-    if [ -z "$host" ]; then
-        $prefix_pg_local_command createdb $pg_local_opts -O "$owner" "$db"
-    else
-        ssh-once "$host" -- \
-            "cd / ; \$prefix_pg_local_command createdb \$pg_local_opts -O '$owner' '$db'"
-    fi
+    rexec "$host" "\$prefix_pg_local_command createdb \$pg_local_opts -O '$owner' '$db'"
+
     errlvl="$?"
     if [ "$VERBOSE" ]; then
         echo -n "     ... "
