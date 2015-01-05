@@ -52,6 +52,13 @@ line to ``/etc/sudoers`` for instance::
 
     bob    ALL=(postgres) NOPASSWD: /usr/bin/psql, /usr/bin/pg_dump, /usr/bin/createdb
 
+But you can also create/edit a file ``~/.pgm.rc`` and set variable
+``prefix_pg_local_command`` (which is by default ``sudo -u postgres``) to any
+other prefix command. All commands related to postgres (``psql``, ``pg_dump``,
+``createdb``, ``dropdb``) will be prefixed by the value of this variable. A
+common value could be the empty string if your local user has been declared
+in postgres as a valid role.
+
 A good test would then to try (directly on the target host)::
 
     sudo -u postgres psql -l

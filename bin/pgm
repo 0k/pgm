@@ -198,10 +198,12 @@ print_usage() {
 ## Common
 ##
 
+pg_local_opts=${pg_local_opts:-""}
+prefix_pg_local_command=${prefix_pg_local_command:-"sudo -u postgres"}
+
 [ -f ~/.pgm.rc ] && . ~/.pgm.rc
 
-export pg_local_opts=${pg_local_opts:-""}
-export prefix_pg_local_command=${prefix_pg_local_command:-"sudo -u postgres"}
+export pg_local_opts prefix_pg_local_command
 
 get_path() { (
     IFS=:
@@ -216,7 +218,7 @@ get_path() { (
 host_psql() {
     host="$1"
     shift
-    rexec "$host" "$prefix_pg_local_command psql $pg_local_opts $*"
+    rexec "$host" '$prefix_pg_local_command psql $pg_local_opts' "$@"
 }
 
 ## To be piped in it
@@ -234,11 +236,16 @@ export -f sql
 rexec() {
     local host
     host="$1"
-
-    code="$(
-        echo "[ -d '$BACKUPS' ] && cd '$BACKUPS' || cd /;"
-        if [ "$2" ]; then
-            echo "$2"
+    shift
+    code="
+    [ -d \"$BACKUPS\" ] && cd \"$BACKUPS\" || cd /;
+    pg_local_opts=\${pg_local_opts:-}
+    prefix_pg_local_command=\${prefix_pg_local_command:-sudo -u postgres}
+    [ -e \"~/.pgm.rc\" ] && . \"~/.pgm.rc\"
+    export pg_local_opts prefix_pg_local_command
+    $(
+        if [ "$*" ]; then
+            echo "$*"
         else
             cat
         fi
@@ -378,7 +385,7 @@ _host_pg_save() {
     db="$2"
     archive="$3"
     rexec "$host" "\
-            $prefix_pg_local_command pg_dump $pg_local_opts -Ox \"$db\" |
+            \$prefix_pg_local_command pg_dump \$pg_local_opts -Ox \"$db\" |
             bzip2 > \"$archive\"
             pipe_errlvl=\"\\${PIPESTATUS[0]}\" errlvl=\"\$?\"
             if [ \"\$errlvl\" != 0 -o \"\$pipe_errlvl\" != 0 ]; then
@@ -470,7 +477,7 @@ host_pg_dump() {
     else
         ssh-once "$host" -- \
             "cd / ;
-             $prefix_pg_local_command pg_dump -Ox '$db' |
+             \$prefix_pg_local_command pg_dump \$pg_local_opts -Ox '$db' |
              $pipe
              "
     fi
@@ -498,7 +505,7 @@ host_pg_fill() {
         (sleep 0.3; pv -i 0.2 -cN unpacked) | buffer -m 8M |
         (sleep 0.5; pv -fi 0.2 -cN fill) |
         (echo '\\set ON_ERROR_STOP on'; cat) |
-          $prefix_pg_local_command psql $pg_local_opts \"$db\" 2>&1 >/dev/null
+          \$prefix_pg_local_command psql \$pg_local_opts \"$db\" 2>&1 >/dev/null
          )
         errlvl=\"\$?\"
         if [ \"\$errlvl\" == "0" -a -z \"\$output\" ]; then
@@ -605,7 +612,7 @@ host_createdb() {
         $prefix_pg_local_command createdb $pg_local_opts -O "$owner" "$db"
     else
         ssh-once "$host" -- \
-            "cd / ; $prefix_pg_local_command createdb -O '$owner' '$db'"
+            "cd / ; \$prefix_pg_local_command createdb \$pg_local_opts -O '$owner' '$db'"
     fi
     errlvl="$?"
     if [ "$VERBOSE" ]; then
