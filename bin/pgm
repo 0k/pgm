@@ -329,7 +329,7 @@ host_pg_drop() {
     [ "$VERBOSE" ] && echo "Dropping database '$db' on" \
         "$([ "$host" ] && echo "host '$host'" || echo "localhost")..."
 
-    echo "DROP DATABASE $2;" |
+    echo "DROP DATABASE \"$db\";" |
     sql "$host" "postgres" >/dev/null
 
     errlvl="$?"
