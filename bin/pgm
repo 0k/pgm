@@ -989,7 +989,7 @@ action_cp () {
             host_pg_drop_session "$shost" "$sdb"
         fi
 
-        $prefix_pg_local_command createdb $pg_local_opts -O openerp "$ddb" -T "$sdb" ||
+        $prefix_pg_local_command createdb $pg_local_opts -O "$duser" "$ddb" -T "$sdb" ||
         die "createdb failed!"
         exit 0
 
