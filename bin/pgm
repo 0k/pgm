@@ -989,8 +989,14 @@ action_cp () {
             host_pg_drop_session "$shost" "$sdb"
         fi
 
-        $prefix_pg_local_command createdb $pg_local_opts -O "$duser" "$ddb" -T "$sdb" ||
-        die "createdb failed!"
+        if [ "$duser" ]; then
+            owner_opts="-O $duser"
+        else
+            owner_opts=""
+        fi
+
+        $prefix_pg_local_command createdb $pg_local_opts $owner_opts "$ddb" -T "$sdb" ||
+            die "createdb failed!"
         exit 0
 
     else
