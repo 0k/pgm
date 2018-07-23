@@ -417,6 +417,7 @@ uncompress() {
        cat
     fi
 }
+set -o pipefail
 cat \"\$filename\" | uncompress |
     filter_role_instructions |
     $pipe
@@ -477,7 +478,8 @@ host_pg_dump() {
     db="$2"
     pipe="$3"
 
-    rexec "$host" "\$prefix_pg_local_command pg_dump \$pg_local_opts -Ox '$db' | $pipe"
+    rexec "$host" "set -o pipefail
+\$prefix_pg_local_command pg_dump \$pg_local_opts -Ox '$db' | $pipe"
 
 }
 
@@ -778,8 +780,9 @@ depends '"$dependencies" || exit 1
         depends $dependencies
     fi
 
-    if ! echo "SELECT 1;" | sql "$host" postgres >/dev/null 2>&1; then
-        die "Insufficient access: psql command non-working on '$host'."
+    if ! echo "SELECT 1;" | sql "$host" postgres >/dev/null; then
+        die "Insufficient access: sample 'psql' check command did not work on" \
+            $([ "$host" ] && echo "host '$host'." || echo "localhost.")
     fi
 
     if ! echo "SHOW is_superuser;" | sql "$host" "postgres" >/dev/null; then
@@ -986,7 +989,7 @@ action_cp () {
     }
 
     if [ "$quick" ]; then
-        echo -n "Quick copy of $src to $dst. "
+        echo "Quick copy of $src to $dst... "
         if [ "$connections" -gt "0" ]; then
             echo "Cutting down $connections connections."
             host_pg_drop_session "$shost" "$sdb"
@@ -1000,6 +1003,7 @@ action_cp () {
 
         $prefix_pg_local_command createdb $pg_local_opts $owner_opts "$ddb" -T "$sdb" ||
             die "createdb failed!"
+        echo "  ..done"
         exit 0
 
     else
@@ -1008,14 +1012,28 @@ action_cp () {
             to_drop=yes
             host_createdb "$dhost" "$owner" "$ddb" || die "createdb failed!"
             trap drop_dst_db EXIT
+        else
+            dest_dir="$(dirname "$dfile")"
+            if ! [ -e "$dest_dir" ]; then
+                die "No such directory $dest_dir (for destination file)."
+            fi
+            if ! [ -w "$(dirname "$dfile")" ]; then
+                die "No write permission in $dest_dir (for destination file)."
+            fi
         fi
 
-        echo "Copy of $src to $dst."
+        echo "Copy of $src to $dst ..."
+        set -o pipefail
         stream_from_file_or_database "$shost" "$sfile" "$sdb" "$(
         [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bzip2 -3")" |
         stream_to_file_or_database "$dhost" "$dfile" "$ddb" "$(
-        [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bunzip2")" ||
-        die "Copy failed !"
+        [ -z "$shost" -a -z "$dhost" ] && echo "cat" || echo "bunzip2")" || {
+            if [ "$dfile" -a -e "$dfile" ]; then
+                rm "$dfile"  ## remove partial file
+            fi
+            die "Copy failed !"
+        }
+        set +o pipefail
         echo "Finished copy successfully."
         to_drop=
         if [ "$duser" ]; then
