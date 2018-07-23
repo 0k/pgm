@@ -190,6 +190,12 @@ print_usage() {
             export action_$act_usage >/dev/null 2>&1
             echo "  $exname $act $(eval echo \$action_${act}_usage)"
         done
+        echo
+        echo "OPTIONS"
+        echo "    DBNAME   should match one of these pattern:"
+        echo "               [[USER@]HOST:][PGUSER@][DBPATTERN][:PGPORT]"
+        echo "               [[USER@]HOST:][FILEPATTERN]"
+        echo
     fi >&2
 
 }
