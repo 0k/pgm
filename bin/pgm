@@ -544,40 +544,86 @@ host_pg_chown() {
     db="$3"
 
     [ "$VERBOSE" ] && wrap_opts="" || wrap_opts="-q"
-    Wrap $wrap_opts -d "Setting ownership on views" <<EOF || exit 1
+    single_quote_user="${user//\'/\'\'}"
+    double_quote_user="${single_quote_user//\"/\"\"}"
 
-       echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO \"$user\";'
+    export sql host db
+
+    sql=$(echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO \"${double_quote_user}\";'
          FROM pg_views
-         WHERE schemaname = 'public'" |
-       sql "$host" "$db" | sql "$host" "$db"
-EOF
+         WHERE schemaname = 'public' AND
+               viewowner != '${single_quote_user}'" |
+              sql "$host" "$db") || exit 1
 
-    Wrap $wrap_opts -d "Setting ownership on tables" <<EOF || exit 1
-       echo "SELECT 'ALTER TABLE ' || tablename || ' OWNER TO \"$user\";'
+    if [ "$sql" ]; then
+        Wrap $wrap_opts -d "Setting ownership on views" <<'EOF' || exit 1
+          echo "$sql" | sql "$host" "$db"
+EOF
+    fi
+
+    sql=$(echo "SELECT 'ALTER TABLE ' || tablename || ' OWNER TO \"${double_quote_user}\";'
           FROM pg_tables
-          WHERE schemaname = 'public'" |
-       sql "$host" "$db" | sql "$host" "$db"
-EOF
+          WHERE schemaname = 'public' AND
+               tableowner != '${single_quote_user}'" |
+       sql "$host" "$db") || exit 1
 
-    Wrap $wrap_opts -d "Restating user permissions on tables" <<EOF || exit 1
-       echo "SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON ' ||
-                 tablename || ' TO \"$user\";'
-          FROM pg_tables
-          WHERE schemaname = 'public'" |
-       sql "$host" "$db" | sql "$host" "$db"
+    if [ "$sql" ]; then
+        Wrap $wrap_opts -d "Setting ownership on tables" <<'EOF' || exit 1
+          echo "$sql" | sql "$host" "$db"
 EOF
+    fi
 
-    Wrap $wrap_opts -d "Setting ownership on sequences" <<EOF || exit 1
-       echo "SELECT 'ALTER TABLE ' || sequence_name || ' OWNER TO \"$user\";'
-          FROM information_schema.sequences
-          WHERE sequence_schema = 'public'" |
-       sql "$host" "$db" | sql "$host" "$db"
+    sql=$(echo "SELECT 'GRANT ' || array_to_string(t.missing_privs, ', ') || ' ON ' ||
+                 t.tablename || ' TO \"${single_quote_user}\";'
+          FROM (SELECT tablename, array(
+                    SELECT unnest(ARRAY['SELECT', 'UPDATE', 'INSERT', 'DELETE'])
+                    EXCEPT
+                    SELECT privilege_type::TEXT
+                      FROM information_schema.role_table_grants
+                      WHERE grantee = '${single_quote_user}' AND
+                            privilege_type IN ('SELECT','UPDATE','INSERT','DELETE')
+                    ) AS missing_privs
+                FROM pg_tables AS tables
+                WHERE schemaname = 'public'
+          ) AS t
+          WHERE array_length(t.missing_privs, 1) > 0" |
+       sql "$host" "$db") || exit 1
+    if [ "$sql" ]; then
+        Wrap $wrap_opts -d "Restating user permissions on tables" <<'EOF' || exit 1
+          echo "$sql" | sql "$host" "$db"
 EOF
+    fi
 
-    Wrap $wrap_opts -d "Setting ownership on database $db" <<EOF || exit 1
-       echo "ALTER DATABASE \"$db\" OWNER TO \"$user\";" |
-       sql "$host" "$db"
+
+    sql=$(echo "SELECT 'ALTER TABLE ' || c.relname || ' OWNER TO \"${double_quote_user}\";'
+  FROM pg_class c, pg_user u
+ WHERE c.relowner = u.usesysid AND c.relkind = 'S' AND u.usename != '${single_quote_user}'
+   AND relnamespace IN (
+                        SELECT oid
+                          FROM pg_namespace
+                         WHERE nspname NOT LIKE 'pg_%'
+                           AND nspname != 'information_schema'
+                        );" |
+       sql "$host" "$db") || exit 1
+    if [ "$sql" ]; then
+        Wrap $wrap_opts -d "Setting ownership on sequences" <<'EOF' || exit 1
+          echo "$sql" | sql "$host" "$db"
 EOF
+    fi
+
+
+    sql=$(echo "SELECT 'ALTER DATABASE \"$db\" OWNER TO \"${double_quote_user}\";'
+        FROM pg_database pd
+        JOIN pg_authid ON pd.datdba = pg_authid.oid
+        WHERE datistemplate = false AND
+              rolname != '${single_quote_user}' AND
+              datname = '$db'" |
+       sql "$host" "$db") || exit 1
+    if [ "$sql" ]; then
+        Wrap $wrap_opts -d "Setting ownership on database $db" <<'EOF' || exit 1
+          echo "$sql" | sql "$host" "$db"
+EOF
+    fi
 
 }
 
@@ -585,7 +631,7 @@ user_exists() {
     host="$1"
     user="$2"
 
-    [ "$(echo "SELECT 1 FROM pg_roles WHERE rolname='$user'" |
+    [ "$(echo "SELECT 1 FROM pg_roles WHERE rolname='${user//\'/\'\'}'" |
          sql "$host" "postgres")" ]
 }
 
@@ -595,7 +641,7 @@ host_create_user() {
 
     [ "$VERBOSE" ] && wrap_opts="" || wrap_opts="-q"
     Wrap $wrap_opts -d "Creating user $user" <<EOF || exit 1
-    echo "CREATE USER $user" | sql "$host" "postgres"
+    echo "CREATE USER \"${user//\"/\\\"\\\"}\"" | sql "$host" "postgres"
 EOF
 
 }
