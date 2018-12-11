@@ -546,14 +546,14 @@ host_pg_chown() {
     [ "$VERBOSE" ] && wrap_opts="" || wrap_opts="-q"
     Wrap $wrap_opts -d "Setting ownership on views" <<EOF || exit 1
 
-       echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO $user;'
+       echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO \"$user\";'
          FROM pg_views
          WHERE schemaname = 'public'" |
        sql "$host" "$db" | sql "$host" "$db"
 EOF
 
     Wrap $wrap_opts -d "Setting ownership on tables" <<EOF || exit 1
-       echo "SELECT 'ALTER TABLE ' || tablename || ' OWNER TO $user;'
+       echo "SELECT 'ALTER TABLE ' || tablename || ' OWNER TO \"$user\";'
           FROM pg_tables
           WHERE schemaname = 'public'" |
        sql "$host" "$db" | sql "$host" "$db"
@@ -561,21 +561,21 @@ EOF
 
     Wrap $wrap_opts -d "Restating user permissions on tables" <<EOF || exit 1
        echo "SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON ' ||
-                 tablename || ' TO $user;'
+                 tablename || ' TO \"$user\";'
           FROM pg_tables
           WHERE schemaname = 'public'" |
        sql "$host" "$db" | sql "$host" "$db"
 EOF
 
     Wrap $wrap_opts -d "Setting ownership on sequences" <<EOF || exit 1
-       echo "SELECT 'ALTER TABLE ' || sequence_name || ' OWNER TO $user;'
+       echo "SELECT 'ALTER TABLE ' || sequence_name || ' OWNER TO \"$user\";'
           FROM information_schema.sequences
           WHERE sequence_schema = 'public'" |
        sql "$host" "$db" | sql "$host" "$db"
 EOF
 
     Wrap $wrap_opts -d "Setting ownership on database $db" <<EOF || exit 1
-       echo "ALTER DATABASE \"$db\" OWNER TO $user;" |
+       echo "ALTER DATABASE \"$db\" OWNER TO \"$user\";" |
        sql "$host" "$db"
 EOF
 
@@ -675,8 +675,8 @@ import sys
 
 PATTERN = (r"^((?P<host>([^@]+@)?[a-zA-Z0-9.-]+):)?"
            r"("  ## database ?
-           r"((?P<pguser>[a-zA-Z0-9_]+)@)?"
-           r"(?P<dbpattern>[a-zA-Z0-9_.*]*)"
+           r"((?P<pguser>[a-zA-Z0-9_.-]+)@)?"
+           r"(?P<dbpattern>[a-zA-Z0-9_.*-]*)"
            r"(:(?P<port>[0-9*]+))?"
            r"|"  ## or file pattern ?
            r"(?P<fpath>.*)"
