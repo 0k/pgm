@@ -545,11 +545,10 @@ host_pg_chown() {
 
     [ "$VERBOSE" ] && wrap_opts="" || wrap_opts="-q"
     single_quote_user="${user//\'/\'\'}"
-    double_quote_user="${single_quote_user//\"/\"\"}"
 
     export sql host db
 
-    sql=$(echo "SELECT 'ALTER TABLE ' || viewname || ' OWNER TO \"${double_quote_user}\";'
+    sql=$(echo "SELECT 'ALTER TABLE ' || quote_ident(viewname) || ' OWNER TO ' || quote_ident('${single_quote_user}') || ';'
          FROM pg_views
          WHERE schemaname = 'public' AND
                viewowner != '${single_quote_user}'" |
@@ -562,7 +561,7 @@ host_pg_chown() {
 EOF
     fi
 
-    sql=$(echo "SELECT 'ALTER TABLE ' || tablename || ' OWNER TO \"${double_quote_user}\";'
+    sql=$(echo "SELECT 'ALTER TABLE ' || quote_ident(tablename) || ' OWNER TO ' || quote_ident('${single_quote_user}') || ';'
           FROM pg_tables
           WHERE schemaname = 'public' AND
                tableowner != '${single_quote_user}'" |
@@ -576,7 +575,7 @@ EOF
     fi
 
     sql=$(echo "SELECT 'GRANT ' || array_to_string(t.missing_privs, ', ') || ' ON ' ||
-                 t.tablename || ' TO \"${single_quote_user}\";'
+                 quote_ident(t.tablename) || ' TO ' || quote_ident('${single_quote_user}') || ';'
           FROM (SELECT tablename, array(
                     SELECT unnest(ARRAY['SELECT', 'UPDATE', 'INSERT', 'DELETE'])
                     EXCEPT
@@ -598,7 +597,7 @@ EOF
     fi
 
 
-    sql=$(echo "SELECT 'ALTER TABLE ' || c.relname || ' OWNER TO \"${double_quote_user}\";'
+    sql=$(echo "SELECT 'ALTER TABLE ' || quote_ident(c.relname) || ' OWNER TO ' || quote_ident('${single_quote_user}') || ';'
   FROM pg_class c, pg_user u
  WHERE c.relowner = u.usesysid AND c.relkind = 'S' AND u.usename != '${single_quote_user}'
    AND relnamespace IN (
@@ -616,7 +615,7 @@ EOF
     fi
 
 
-    sql=$(echo "SELECT 'ALTER DATABASE \"$db\" OWNER TO \"${double_quote_user}\";'
+    sql=$(echo "SELECT 'ALTER DATABASE \"$db\" OWNER TO ' || quote_ident('${single_quote_user}') || ';'
         FROM pg_database pd
         JOIN pg_authid ON pd.datdba = pg_authid.oid
         WHERE datistemplate = false AND
