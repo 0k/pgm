@@ -508,7 +508,7 @@ host_pg_fill() {
           \$prefix_pg_local_command psql \$pg_local_opts \"$db\" 2>&1
          )
         errlvl=\"\$?\"
-        if [ \"\$errlvl\" == "0" -a -z \"\$output\" ]; then
+        if [ \"\$errlvl\" == \"0\" -a -z \"\$output\" ]; then
             exit 0
         else
             if [ \"\$errlvl\" != 0 ]; then
