@@ -741,14 +741,14 @@ def parse_db_pattern(p):
         exit(1)
     return match.groupdict()
 
-parsed = parse_db_pattern("'$1'")
+parsed = parse_db_pattern(sys.argv[1])
 
 ## The last value '1' is there to check the parsing was ok
 
 sys.stdout.write("\0".join([parsed[k] if parsed[k] else ""
                 for k in ("host", "pguser", "dbpattern", "port", "fpath")] +
                            ["1", ]))
-'
+' "$@"
 
 }
 
