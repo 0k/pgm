@@ -556,8 +556,9 @@ host_pg_chown() {
               sql "$host" "$db") || exit 1
 
     if [ "$sql" ]; then
-        Wrap $wrap_opts -d "Setting ownership on views" <<'EOF' || exit 1
-          echo "$sql" | sql "$host" "$db"
+        Wrap $wrap_opts -d "Setting ownership on views" <<EOF || exit 1
+          # SQL: $sql
+          echo "\$sql" | sql "\$host" "\$db"
 EOF
     fi
 
@@ -568,8 +569,9 @@ EOF
        sql "$host" "$db") || exit 1
 
     if [ "$sql" ]; then
-        Wrap $wrap_opts -d "Setting ownership on tables" <<'EOF' || exit 1
-          echo "$sql" | sql "$host" "$db"
+        Wrap $wrap_opts -d "Setting ownership on tables" <<EOF || exit 1
+          # SQL: $sql
+          echo "\$sql" | sql "\$host" "\$db"
 EOF
     fi
 
@@ -589,8 +591,9 @@ EOF
           WHERE array_length(t.missing_privs, 1) > 0" |
        sql "$host" "$db") || exit 1
     if [ "$sql" ]; then
-        Wrap $wrap_opts -d "Restating user permissions on tables" <<'EOF' || exit 1
-          echo "$sql" | sql "$host" "$db"
+        Wrap $wrap_opts -d "Restating user permissions on tables" <<EOF || exit 1
+          # SQL: $sql
+          echo "\$sql" | sql "\$host" "\$db"
 EOF
     fi
 
@@ -606,8 +609,9 @@ EOF
                         );" |
        sql "$host" "$db") || exit 1
     if [ "$sql" ]; then
-        Wrap $wrap_opts -d "Setting ownership on sequences" <<'EOF' || exit 1
-          echo "$sql" | sql "$host" "$db"
+        Wrap $wrap_opts -d "Setting ownership on sequences" <<EOF || exit 1
+          # SQL: $sql
+          echo "\$sql" | sql "\$host" "\$db"
 EOF
     fi
 
@@ -620,8 +624,9 @@ EOF
               datname = '$db'" |
        sql "$host" "$db") || exit 1
     if [ "$sql" ]; then
-        Wrap $wrap_opts -d "Setting ownership on database $db" <<'EOF' || exit 1
-          echo "$sql" | sql "$host" "$db"
+        Wrap $wrap_opts -d "Setting ownership on database $db" <<EOF || exit 1
+          # SQL: $sql
+          echo "\$sql" | sql "\$host" "\$db"
 EOF
     fi
 
