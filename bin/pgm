@@ -600,11 +600,12 @@ EOF
     sql=$(echo "SELECT 'ALTER TABLE ' || quote_ident(c.relname) || ' OWNER TO ' || quote_ident('${single_quote_user}') || ';'
   FROM pg_class c, pg_user u
  WHERE c.relowner = u.usesysid AND c.relkind = 'S' AND u.usename != '${single_quote_user}'
-   AND relnamespace IN (
+   AND c.relnamespace IN (
                         SELECT oid
                           FROM pg_namespace
                          WHERE nspname NOT LIKE 'pg_%'
                            AND nspname != 'information_schema'
+                           AND nspname != 'topology'
                         );" |
        sql "$host" "$db") || exit 1
     if [ "$sql" ]; then
