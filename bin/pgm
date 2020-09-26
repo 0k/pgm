@@ -881,6 +881,7 @@ action_cp_options="\
 -q       Use quicker templating system to make the copy, note that
          all active session will be dropped.
 -f       Force copy even if DST_DBNAME already exists (it'll overwrite it).
+         Force user creation if destination user does not exist already.
 -b       As 'force' but will backup the database before overwriting it.
 "
 
@@ -1047,6 +1048,16 @@ action_cp () {
 
         if [ "$duser" ]; then
             owner_opts="-O $duser"
+            if ! user_exists "$dhost" "$duser"; then
+                if [ "$force" ]; then
+                    host_create_user "$dhost" "$duser"
+                else
+                    die "No postgres user '$duser' on" \
+                        $([ "$dhost" ] && echo "host '$dhost'." || echo "localhost.") \
+                        "Use '-f' option to force creation of the user."
+                fi
+            fi
+
         else
             owner_opts=""
         fi
