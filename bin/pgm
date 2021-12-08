@@ -226,6 +226,13 @@ host_psql() {
     rexec "$host" '$prefix_pg_local_command psql $pg_local_opts' "$@"
 }
 
+host_pg_dump() {
+    host="$1"
+    shift
+    rexec "$host" '$prefix_pg_local_command pg_dump $pg_local_opts' "$@"
+}
+
+
 ## To be piped in it
 sql() {
     host="$1"
@@ -455,7 +462,7 @@ stream_from_file_or_database() {
     if [ "$file" ]; then
         host_stream_from_file "$host" "$file" "$pipe"
     else
-        host_pg_dump "$host" "$db" "$pipe"
+        host_pg_dump_pipe "$host" "$db" "$pipe"
     fi
 }
 
@@ -473,7 +480,7 @@ stream_to_file_or_database() {
     fi
 }
 
-host_pg_dump() {
+host_pg_dump_pipe() {
     host="$1"
     db="$2"
     pipe="$3"
@@ -610,6 +617,28 @@ EOF
        sql "$host" "$db") || exit 1
     if [ "$sql" ]; then
         Wrap $wrap_opts -d "Setting ownership on sequences" <<EOF || exit 1
+          # SQL: $sql
+          echo "\$sql" | sql "\$host" "\$db"
+EOF
+    fi
+
+
+    ## As of 2021-12-08, it doesn't seem easy to use SQL to get the
+    ## list of function that are actually meant to belong to the local
+    ## database. The best way seems to be using ``pg_dump``
+    ## (cf: https://stackoverflow.com/questions/70267393 )
+    safe_user=$(echo "SELECT quote_ident('$single_quote_user')" | sql "$host" "$db")
+    sql=""
+    while read -r fdef; do
+        fdef=${fdef#CREATE }
+        fdef=${fdef% RETURNS *}
+        ## remove all DEFAULT ... in arguments
+        fdef=$(echo "$fdef" | sed -r 's/ DEFAULT [^,)]*//g')
+        sql+="ALTER $fdef OWNER TO $safe_user;"
+    done < <(host_pg_dump "$host" --no-owner --schema-only "$db" |
+                 grep ^"CREATE FUNCTION")
+    if [ "$sql" ]; then
+        Wrap $wrap_opts -d "Setting ownership on functions" <<EOF || exit 1
           # SQL: $sql
           echo "\$sql" | sql "\$host" "\$db"
 EOF
