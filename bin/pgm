@@ -507,9 +507,9 @@ host_pg_fill() {
         die() { err \"\$@\" ; exit 1; }
 
         output=\$(
-        (sleep 0.1; pv -i 0.2 -cN received) | buffer -m 8M |
+        (sleep 0.1; pv -i 0.2 -cN received) | buffer |
         $pipe |
-        (sleep 0.3; pv -i 0.2 -cN unpacked) | buffer -m 8M |
+        (sleep 0.3; pv -i 0.2 -cN unpacked) | buffer |
         (sleep 0.5; pv -fi 0.2 -cN fill) |
         ([ '$IGNORE_ERRORS' ] || echo '\\set ON_ERROR_STOP on'; cat) |
           \$prefix_pg_local_command psql \$pg_local_opts \"$db\" 2>&1
