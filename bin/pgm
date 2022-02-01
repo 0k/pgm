@@ -204,8 +204,11 @@ print_usage() {
 ##
 
 pg_local_opts=${pg_local_opts:-""}
-prefix_pg_local_command=${prefix_pg_local_command:-"sudo -u postgres"}
-
+if type -p sudo >/dev/null 2>&1 &&
+       [[ "$(whoami)" != 'postgres' ]] &&
+       getent passwd postgres; then
+    prefix_pg_local_command=${prefix_pg_local_command:-"sudo -u postgres"}
+fi
 [ -f ~/.pgm.rc ] && . ~/.pgm.rc
 
 export pg_local_opts prefix_pg_local_command
@@ -252,7 +255,12 @@ rexec() {
     code="
     [ -d \"$BACKUPS\" ] && cd \"$BACKUPS\" || cd /;
     pg_local_opts=\${pg_local_opts:-}
-    prefix_pg_local_command=\${prefix_pg_local_command:-sudo -u postgres}
+    if type -p sudo >/dev/null 2>&1 &&
+           [[ \"$(whoami)\" != 'postgres' ]] &&
+           getent passwd postgres; then
+        prefix_pg_local_command=${prefix_pg_local_command:-sudo -u postgres}
+    fi
+
     [ -e \"~/.pgm.rc\" ] && . \"~/.pgm.rc\"
     export pg_local_opts prefix_pg_local_command
     $(
